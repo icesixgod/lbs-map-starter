@@ -11,16 +11,16 @@
  <header class="topbar">
   <div class="brand"><strong>LBS Map</strong><span id="project-caption">地图 Starter</span></div>
   <div class="district-brand"><h1 id="district-title">默认街区</h1><span id="building-count">正在载入建筑…</span></div>
-  <div class="map-tools" role="group" aria-label="地图工具"><button id="building-list-toggle" aria-controls="building-browser" aria-expanded="false">建筑列表</button><button id="view-toggle" aria-pressed="false">2D 地图</button><button id="region-button">探索坐标</button><a id="project-source" class="source-link" href="https://github.com/icesixgod/lbs-map-starter" target="_blank" rel="noopener" hidden>GitHub ↗</a></div>
+  <div class="map-tools" role="group" aria-label="地图工具"><button id="view-toggle" aria-pressed="false">2D 地图</button><button id="map-tools-toggle" aria-controls="map-tools-menu" aria-expanded="false">工具 <span aria-hidden="true">⌄</span></button><div id="map-tools-menu" class="map-tools-menu"><button id="building-list-toggle" aria-controls="building-browser" aria-expanded="false">建筑列表</button><button id="region-button">探索坐标</button><button id="gps-button"><span>启用 GPS</span></button><a id="project-source" class="source-link" href="https://github.com/icesixgod/lbs-map-starter" target="_blank" rel="noopener" hidden>GitHub ↗</a></div></div>
  </header>
  <section class="map-stage" aria-label="街区地图与建筑选择">
   <div id="lbs-scene-root"><div id="district-map">
-   <canvas id="district-canvas" aria-label="拖动平移、滚轮缩放，点击单栋建筑选择"></canvas>
+   <canvas id="district-canvas" aria-label="拖动平移，双指或滚轮缩放，点击建筑查看详情"></canvas>
    <svg id="map-2d" viewBox="-1700 -1700 3400 3400" aria-label="街区平面地图，选择建筑后按回车查看详情" hidden></svg>
    <div id="map-markers"><button id="building-marker" class="place-marker" data-place-marker="selected" aria-label="查看已选建筑" hidden></button></div>
    <div id="player-marker" role="img" aria-label="设备位置" hidden><i></i></div>
   </div></div>
-  <div class="map-filter" role="group" aria-label="建筑类型筛选"><button data-filter="all" class="selected" aria-pressed="true">全部建筑</button><button data-filter="residence" aria-pressed="false">住宅</button><button data-filter="mall" aria-pressed="false">商业</button><button data-filter="hospital" aria-pressed="false">医疗</button><button data-filter="school" aria-pressed="false">学校</button></div>
+  <div class="map-filter-wrap"><button id="filter-toggle" aria-controls="map-filter-options" aria-expanded="false"><span id="filter-label">全部建筑</span><span aria-hidden="true">⌄</span></button><div id="map-filter-options" class="map-filter" role="group" aria-label="建筑类型筛选"><button data-filter="all" class="selected" aria-pressed="true">全部建筑</button><button data-filter="residence" aria-pressed="false">住宅</button><button data-filter="mall" aria-pressed="false">商业</button><button data-filter="hospital" aria-pressed="false">医疗</button><button data-filter="school" aria-pressed="false">学校</button></div></div>
   <div class="map-hint" id="map-hint">拖动浏览 · 滚轮缩放 · 点击建筑查看详情</div>
   <aside id="building-browser" class="map-panel building-browser" aria-label="建筑列表" hidden>
    <div class="panel-heading"><div><small>BUILDINGS</small><h2>建筑列表</h2></div><button id="building-list-close" class="close" aria-label="关闭建筑列表">×</button></div>
@@ -32,12 +32,12 @@
    <div class="panel-heading"><div><small>SELECTED BUILDING</small><h2 id="building-name">选择建筑</h2></div><button id="building-close" class="close" aria-label="取消建筑选择">×</button></div>
    <p id="building-kind" class="building-kind"></p>
    <dl class="building-metrics"><div><dt>建筑高度</dt><dd id="building-height">—</dd></div><div><dt>占地面积</dt><dd id="building-area">—</dd></div></dl>
-   <p id="building-height-note" class="muted"></p>
+   <div id="building-details" class="building-details"><p id="building-height-note" class="muted"></p>
    <dl class="building-location"><div><dt>纬度</dt><dd id="building-lat">—</dd></div><div><dt>经度</dt><dd id="building-lon">—</dd></div></dl>
-   <p id="building-street" class="muted" hidden></p>
-   <div class="building-actions"><button id="focus-building" class="primary">居中查看</button><a id="building-source" target="_blank" rel="noopener" hidden>地图来源 ↗</a></div>
+   <p id="building-street" class="muted" hidden></p><a id="building-source" target="_blank" rel="noopener" hidden>地图来源 ↗</a></div>
+   <div class="building-actions"><button id="building-details-toggle" aria-controls="building-details" aria-expanded="false">更多信息 <span aria-hidden="true">⌄</span></button><button id="focus-building" class="primary">居中查看</button></div>
   </aside>
-  <div class="map-bottom"><div class="zoom-controls" role="group" aria-label="地图缩放"><button id="zoom-out" aria-label="缩小地图">−</button><button id="zoom-in" aria-label="放大地图">+</button></div><button id="recenter">地图归位</button><button id="gps-button"><span>启用 GPS</span></button></div>
+  <div class="map-bottom"><div class="zoom-controls" role="group" aria-label="地图缩放"><button id="zoom-in" aria-label="放大地图">+</button><button id="zoom-out" aria-label="缩小地图">−</button></div><button id="recenter" aria-label="地图归位"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 1v4m0 14v4M1 12h4m14 0h4"/></svg><span>地图归位</span></button></div>
   <div class="location-card"><strong id="location-title">默认街区</strong><small id="location-detail">WGS84 · 未使用设备定位</small><span id="location-signal">MAP</span></div>
   <div class="map-compass" aria-hidden="true"><span>N</span><i>↑</i></div>
   <div class="map-scale" aria-hidden="true"><span id="map-scale-label">200 m</span><i id="map-scale-line"></i></div>

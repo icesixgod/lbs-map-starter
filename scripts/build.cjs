@@ -19,7 +19,7 @@ function build({ staticDemo = false } = {}) {
     'vendor/three-0.160.1.min.js', 'vendor/polygon-clipping-0.15.7.min.js',
     'coop-geography.js', 'coop-building-merge.js', 'coop-street-building-groups.js',
     'coop-city-blocks.js', 'coop-local-places.js', 'lbs-map-buildings.js',
-    'lbs-map-work.js', 'lbs-map-stream.js', 'map-model.js',
+    'lbs-map-work.js', 'lbs-map-stream.js', 'map-model.js', 'map-gestures.js',
   ];
   const workerModules = [
     'vendor/polygon-clipping-0.15.7.min.js', 'coop-geography.js',

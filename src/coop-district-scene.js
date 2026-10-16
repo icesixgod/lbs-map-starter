@@ -556,42 +556,34 @@ playerEntry=options.positionMarker?{node:document.getElementById(options.positio
   if(!followTarget||pointer)return;const elapsed=followFrame?Math.max(0,Math.min(64,now-followFrame)):16.67;followFrame=now;
   target.lerp(followTarget,1-Math.exp(-elapsed/100));if(target.distanceToSquared(followTarget)<.0004){target.copy(followTarget);followTarget=null;}viewChanged=true;invalidateCamera();
  }
- function movePointer(e){
-  pointer.clientX=e.clientX;pointer.clientY=e.clientY;
-  if(!pointer.moved&&Math.hypot(e.clientX-pointer.x,e.clientY-pointer.y)>6){pointer.moved=true;dragStats.gestures++;lastDragFrame=0;options.onInteraction?.(true);}
-  if(pointer.moved){framing=false;pendingPan=pointer;dirty=true;}
- }
- // Capture on the original canvas/button so an unmoved label keeps its native click.
- let suppressedClick=null;
+ function movePointer(e){pointer=e;framing=false;pendingPan=e;dirty=true;}
+ let gestureInput=null;
  function inputActive(){return active&&!disposed&&!canvas.hidden&&container.dataset.mapMode!=='2d';}
  function inputOrigin(e){const node=e.target===canvas?canvas:e.target?.closest?.('.place-marker,[data-place-marker]');return node&&container.contains(node)?node:null;}
- function suppressPointerClick(p){suppressedClick={id:p.id,node:p.node};}
- function releasePointer(p){try{if(p.node.hasPointerCapture(p.id))p.node.releasePointerCapture(p.id);}catch(e){/* A streamed marker may already have been removed. */}}
- function cancelPointer(){const p=pointer;pointer=null;pendingPan=null;if(!p)return;suppressPointerClick(p);releasePointer(p);if(p.moved){viewChanged=true;dirty=true;options.onInteraction?.(false);}}
- function pointerDown(e){
-  if(disposed||e.button!==0||e.isPrimary===false||pointer)return;suppressedClick=null;
-  if(!inputActive())return;const node=inputOrigin(e);if(!node)return;
-  followTarget=null;applyPan();updateCamera();cast(e);if(!ray.ray.intersectPlane(plane,hit))return;
-  pointer={id:e.pointerId,node,x:e.clientX,y:e.clientY,clientX:e.clientX,clientY:e.clientY,anchor:hit.clone(),moved:false};
-  node.setPointerCapture(e.pointerId);
+ function cancelPointer(){gestureInput?.cancel();pointer=null;pendingPan=null;}
+ function startPointer(p){
+  followTarget=null;applyPan();updateCamera();cast(p);if(!ray.ray.intersectPlane(plane,hit))return false;
+  pointer=p;p.anchor=hit.clone();
  }
- function pointerMove(e){if(inputActive()&&pointer?.id===e.pointerId)movePointer(e);}
- function pointerUp(e){
-  if(!inputActive()||pointer?.id!==e.pointerId)return;
-  movePointer(e);const p=pointer;if(p.moved){applyPan();suppressPointerClick(p);}pointer=null;
-  if(p.moved){viewChanged=true;dirty=true;options.onInteraction?.(false);return;}if(p.node!==canvas)return;
+ function pinchStart(p){applyPan();pendingPan=null;updateCamera();cast(p);p.anchor=ray.ray.intersectPlane(plane,hit)?hit.clone():null;p.span=span;framing=false;}
+ function pinchMap(p){
+  span=THREE.MathUtils.clamp(p.span*p.ratio,420,5200);invalidateCamera(true);updateCamera();cast(p);
+  if(p.anchor&&ray.ray.intersectPlane(plane,hit))target.add(p.anchor).sub(hit);
+  viewChanged=true;viewInput=true;invalidateCamera();updateCamera();
+ }
+ function tapPointer(e){
+  if(e.node!==canvas)return;
   updateCamera();cast(e);if(options.districtSelection){const started=performance.now();let region=buildingsVisible&&!options.baseOnly?options.districtSelection.raycast?.(ray.ray,filter,visibleBuildingIds):null;const buildingHit=!!region;if(!region&&ray.ray.intersectPlane(plane,hit))region=options.districtSelection.at({east:hit.x,north:-hit.z},filter);root.dataset.mapPickTiming=JSON.stringify({x:e.clientX,y:e.clientY,district:region?.id||null,hit:buildingHit?'building':region?'ground':'empty',regions:options.districtSelection.regions.length,models:visibleBuildingIds.size,ms:performance.now()-started});if(region)onSelect(region,false);else options.onEmptySelect?.();return;}const found=ray.intersectObjects(pickable).find(p=>CoopLocalPlaces.matches(p.object.userData.building,filter));if(found)onSelect(found.object.userData.building,false);
- }
- function pointerCancel(e){if(pointer?.id===e.pointerId)cancelPointer();}
- function pointerClick(e){
-  if(disposed||!(e.detail>0||e.pointerType))return;const node=inputOrigin(e);if(!node)return;
-  const p=suppressedClick;if(p&&(typeof e.pointerId==='number'&&e.pointerId>=0?e.pointerId===p.id:node===p.node)){e.preventDefault();e.stopImmediatePropagation();}
  }
  function wheel(e){if(!inputActive()||!inputOrigin(e)||!Number.isFinite(e.deltaY))return;e.preventDefault();zoom(Math.exp(THREE.MathUtils.clamp(e.deltaY*.001,-50,50)));}
  function zoom(factor){if(!Number.isFinite(factor)||factor<=0)return;const next=THREE.MathUtils.clamp(span*factor,420,5200);if(next===span)return;options.onInteraction?.(false);framing=false;span=next;viewChanged=true;viewInput=true;invalidateCamera(true);}
- const inputListeners=[['pointerdown',pointerDown],['pointermove',pointerMove],['pointerup',pointerUp],['pointercancel',pointerCancel],['lostpointercapture',pointerCancel],['click',pointerClick,true],['wheel',wheel,{passive:false}]];
- function installInput(){for(const[type,handler,settings]of inputListeners)container.addEventListener(type,handler,settings);window.addEventListener('blur',cancelPointer);inputInstalled=true;}
- function destroyInput(){for(const[type,handler,settings]of inputListeners)container.removeEventListener(type,handler,settings);window.removeEventListener('blur',cancelPointer);cancelPointer();suppressedClick=null;}
+ function installInput(){
+  gestureInput=LBSMapGestures.bind({surface:container,origin:inputOrigin,enabled:inputActive,blurTarget:window,start:startPointer,pan:movePointer,pinchStart,pinch:pinchMap,tap:tapPointer,
+   end(p,state){if(p?.moved){if(!state.cancelled)applyPan();viewChanged=true;dirty=true;}pointer=null;pendingPan=null;},
+   interaction(value){if(value){dragStats.gestures++;lastDragFrame=0;}options.onInteraction?.(value);}});
+  container.addEventListener('wheel',wheel,{passive:false});inputInstalled=true;
+ }
+ function destroyInput(){gestureInput?.destroy();gestureInput=null;container.removeEventListener('wheel',wheel);cancelPointer();}
  let lastStats=0,lastDragFrame=0;const dragStats={gestures:0,frames:0,maxFrameMs:0};
  // Detailed LBS animation follows native display refresh; static and hidden views keep skipping redraws.
  function animate(now){if(disposed)return;frame=requestAnimationFrame(animate);if(!active||document.hidden)return;applyFollow(now);if(!dirty)return;applyPan();updateCamera();if(pointer?.moved){if(lastDragFrame)dragStats.maxFrameMs=Math.max(dragStats.maxFrameMs,now-lastDragFrame);lastDragFrame=now;dragStats.frames++;root.dataset.mapDragStats=JSON.stringify({...dragStats,maxFrameMs:Math.round(dragStats.maxFrameMs)});}else lastDragFrame=0;if(viewChanged&&(!pointer||now-lastViewNotice>=50)){viewChanged=false;lastViewNotice=now;const view=getView();root.dataset.mapView=JSON.stringify(view);options.onViewChange?.(view);}if(labelsDirty)labels();renderer.render(scene,camera);if(mapProbe)publishProbeTargets();if(!firstPresentation){firstPresentation={firstFrameAt:performance.now()};options.onPresented?.({...firstPresentation});notifyContentReady();}if(art&&(!lastStats||now-lastStats>1000)){root.dataset.cityRenderStats=JSON.stringify({calls:renderer.info.render.calls,triangles:renderer.info.render.triangles,geometries:renderer.info.memory.geometries,textures:renderer.info.memory.textures,pixelRatio:renderer.getPixelRatio(),staticShadows:true});lastStats=now;}dirty=false;lastFrame=now;}

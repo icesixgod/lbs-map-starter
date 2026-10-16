@@ -9,14 +9,22 @@
   }
   const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   let data=LBS_DISTRICT_DATA,local,mapData=data,mapLocal,selected=null,selectedDistrict=null,districts=null,scene=null,mode='map',position=null,watch=null,gpsError='',twoD=false,filter='all';
-  let toastTimer,returnFocus=null,request=null,requestVersion=0,buildingPage=0;
+  let toastTimer,returnFocus=null,request=null,requestVersion=0,buildingPage=0,inspectedId=null;
+  const compactMap=()=>window.matchMedia('(max-width:680px), (max-height:500px) and (max-width:960px)').matches;
+  function focusAvailable(node){(node?.getClientRects().length?node:$('map-tools-toggle')).focus({preventScroll:true});}
+  function setBuildingDetails(open){const button=$('building-details-toggle');button.setAttribute('aria-expanded',String(open));button.innerHTML=(open?'收起信息':'更多信息')+' <span aria-hidden="true">⌄</span>';$('building-inspector').dataset.expanded=String(open);}
+  function closeMapMenus(){for(const id of ['map-tools-toggle','filter-toggle'])$(id).setAttribute('aria-expanded','false');}
+  for(const id of ['map-tools-toggle','filter-toggle'])$(id).onclick=()=>{const open=$(id).getAttribute('aria-expanded')!=='true';closeMapMenus();$(id).setAttribute('aria-expanded',String(open));};
+  document.addEventListener('pointerdown',event=>{if(!event.target.closest('.map-tools,.map-filter-wrap'))closeMapMenus();});
+  $('map-tools-menu').addEventListener('click',event=>{if(event.target.closest('button,a'))closeMapMenus();});
+  $('building-details-toggle').onclick=()=>setBuildingDetails($('building-details-toggle').getAttribute('aria-expanded')!=='true');
   function toast(message){$('toast').textContent=message;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,4500);}
   function selectedMapPlace(){return selectedDistrict;}
   function openBrief(){if(selectedDistrict){$('building-inspector').hidden=false;scene?.invalidateLabels?.();}}
   function closeBrief(restore=true){
-    const hadFocus=$('building-inspector').contains(document.activeElement);selected=null;selectedDistrict=null;$('building-inspector').hidden=true;$('building-marker').hidden=true;scene?.setSelected(null,false);updateDistrictPaths();
+    const hadFocus=$('building-inspector').contains(document.activeElement);selected=null;selectedDistrict=null;inspectedId=null;$('building-inspector').hidden=true;$('building-marker').hidden=true;scene?.setSelected(null,false);updateDistrictPaths();
     for(const button of $('building-list').querySelectorAll('button'))button.setAttribute('aria-pressed','false');
-    if(restore&&hadFocus)$('building-list-toggle').focus({preventScroll:true});
+    if(restore&&hadFocus)focusAvailable($('building-list-toggle'));
   }
   $('building-close').onclick=()=>closeBrief();$('building-marker').onclick=openBrief;
   function buildMarkers(){const marker=$('building-marker');marker.textContent=selectedDistrict?.name||'';marker.setAttribute('aria-label',selectedDistrict?'查看建筑：'+selectedDistrict.name:'查看已选建筑');marker.hidden=!selectedDistrict;scene?.invalidateLabels?.();if(twoD)layout2D();}
@@ -24,14 +32,15 @@
   function layoutProjectedMapLabels(candidates,view){const c=candidates.find(c=>c.id===selectedDistrict?.id),marker=$('building-marker');marker.hidden=!c;if(c){marker.style.left=c.x+'px';marker.style.top=c.y+'px';}}
   function toggleBuildingList(open=$('building-browser').hidden){
     $('building-browser').hidden=!open;$('building-list-toggle').setAttribute('aria-expanded',String(open));
-    if(open){renderBuildingList();$('building-search').focus({preventScroll:true});}
+    if(open){renderBuildingList();if(!compactMap())$('building-search').focus({preventScroll:true});}
+    else if(compactMap()&&document.activeElement===$('building-search'))$('building-search').blur();
   }
   $('building-list-toggle').onclick=()=>toggleBuildingList($('building-browser').hidden);
-  $('building-list-close').onclick=()=>{toggleBuildingList(false);$('building-list-toggle').focus({preventScroll:true});};
+  $('building-list-close').onclick=()=>{toggleBuildingList(false);focusAvailable($('building-list-toggle'));};
   $('building-search').oninput=()=>{buildingPage=0;renderBuildingList();};
   $('building-prev').onclick=()=>{buildingPage--;renderBuildingList();};$('building-next').onclick=()=>{buildingPage++;renderBuildingList();};
   function updateDistrictChoices(){
-    $('building-count').textContent=(districts?.regions.length||0).toLocaleString()+' 栋已载入建筑';
+    $('building-count').textContent=(districts?.regions.length||0).toLocaleString()+' 栋建筑';
     if(!$('building-browser').hidden)renderBuildingList();
   }
   function renderBuildingList(){
@@ -41,9 +50,10 @@
     $('building-list').innerHTML=items.slice(buildingPage*30,buildingPage*30+30).map(r=>'<button data-building-id="'+esc(r.id)+'" aria-pressed="'+(r.id===selectedDistrict?.id)+'"><span>'+esc(r.name)+'</span><small>'+esc(CoopLocalPlaces.types[r.kind]?.label||'建筑')+'</small></button>').join('');
     $('building-page').textContent=(buildingPage+1)+' / '+pages;$('building-prev').disabled=buildingPage===0;$('building-next').disabled=buildingPage===pages-1;
   }
-  $('building-list').onclick=event=>{const button=event.target.closest('button[data-building-id]'),region=districts?.byId.get(button?.dataset.buildingId);if(!region)return;selectMapDistrict(region);focusSelectedBuilding();if(window.matchMedia('(max-width:580px)').matches)toggleBuildingList(false);};
+  $('building-list').onclick=event=>{const button=event.target.closest('button[data-building-id]'),region=districts?.byId.get(button?.dataset.buildingId);if(!region)return;selectMapDistrict(region);focusSelectedBuilding();};
   function updatePosition(focus=false){
     if(!mapLocal)return;
+    $('lbs-app').dataset.locationMode=mode;
     if(position&&L.validPoint(position)){
       const p=mapLocal.geo.local(position.lon,position.lat);scene?.setPosition(p,focus);
       if(mode==='gps'&&mapGPSFollow&&!scene?.dragging&&!twoDPointer){const view=currentMapView();if(twoD)set2DView({...view,center:position});else scene?.followPosition?.(p);scheduleMapView();}
@@ -55,6 +65,7 @@
   }
   function renderBuildingSelection(){
     const r=selectedDistrict;if(!r){$('building-inspector').hidden=true;return;}
+    if(inspectedId!==r.id){inspectedId=r.id;setBuildingDetails(false);}
     selected=r;$('building-name').textContent=r.name;$('building-kind').textContent=CoopLocalPlaces.types[r.kind]?.label||'普通建筑';
     $('building-height').textContent=Number.isFinite(r.height)?Math.round(r.height*10)/10+' m':'—';$('building-area').textContent=Number.isFinite(r.area)?r.area.toLocaleString()+' m²':'—';
     $('building-height-note').textContent=r.heightSource==='map-height'?'高度来自地图标注':r.heightSource==='map-levels'?'高度按地图标注楼层估算':'高度为地图展示估算值';
@@ -137,7 +148,7 @@
     for(const region of nextDistricts.regions){let holes='';for(const ring of region.holes)holes+=(yield* path(ring))+'Z ';pieces.push('<path class="district-region" data-district="'+esc(region.id)+'" data-boundary-source="'+esc(region.boundarySource||'building')+'" role="button" tabindex="0" aria-label="'+esc(region.name)+'，'+region.buildingCount+'栋地图建筑" aria-pressed="false" fill-rule="evenodd" d="'+(yield* path(region.coordinates))+'Z '+holes.trimEnd()+'"/>');if(pieces.length>=80)flush();yield 'svg-districts';}flush();yield 'svg-ready';return prepared;
   }
   function selectMapDistrict(region,focus=false){
-    if(!region)return;selectedDistrict=region;selected=region;scene?.setSelected(region,false);renderBuildingSelection();if(focus)focusSelectedBuilding();
+    if(!region)return;if(compactMap())toggleBuildingList(false);selectedDistrict=region;selected=region;scene?.setSelected(region,false);renderBuildingSelection();if(focus)focusSelectedBuilding();
   }
   // Prepare new selection in the live scene's coordinate system. Old visible
   // bodies keep their selection even when the latest source omits them.
@@ -207,7 +218,7 @@
       $('lbs-scene-root').dataset.mapCoverage=JSON.stringify({center:next.center,extent:next.extentMeters||next.radiusMeters,roads:next.features.filter(f=>f.kind==='road').length,buildings:nextLocal.buildings.length});
       $('district-canvas').hidden=twoD;$('map-2d').toggleAttribute('hidden',!twoD);scene?.setVisible(!twoD);updateMapDetailVisibility(view||currentMapView());$('view-toggle').textContent=twoD?'3D 地图':'2D 地图';$('view-toggle').setAttribute('aria-pressed',String(twoD));
       if(view){scene?.setView(view,false);set2DView(view);}else $('map-2d').setAttribute('viewBox','-1700 -1700 3400 3400');
-      for(const b of document.querySelectorAll('[data-filter]')){b.classList.toggle('selected',b.dataset.filter===filter);b.setAttribute('aria-pressed',String(b.dataset.filter===filter));}
+      for(const b of document.querySelectorAll('[data-filter]')){b.classList.toggle('selected',b.dataset.filter===filter);b.setAttribute('aria-pressed',String(b.dataset.filter===filter));if(b.dataset.filter===filter)$('filter-label').textContent=b.textContent;}
       if(filter!=='all')scene?.setFilter(filter);if(!reuseGeography)renderDistrictContext();updatePosition();
       if(options.basis)rememberPreparedMap(next,basis,scoped,nextDistricts);trace.commitMs=performance.now()-commitStart;committed=true;mapRecord(trace,'new-map-input-attached',{commitMs:trace.commitMs});$('lbs-scene-root').dataset.mapLoadTiming=JSON.stringify({cache:next.delivery?.cache||'bundled',geographyReused:reuseGeography,totalMs:Math.round(performance.now()-trace.startedAt),commitMs:Math.round(trace.commitMs),modelMs:Math.round(trace.model?.totalWallMs||0),sceneMs:Math.round(trace.scene?.totalWallMs||0),districtMs:Math.round(trace.district?.totalWallMs||0)});
       for(const source of mapBaseCache)showMapBase(source).catch(()=>{});if(oldScene?.destroyAsync)oldScene.destroyAsync({replaceCanvas:false,preserveMetadata:true}).then(metrics=>{trace.oldSceneDispose=metrics;}).catch(error=>mapRecord(trace,'old-scene-dispose-error',{errorMessage:error.message}));return true;
@@ -460,39 +471,38 @@
     $('district-canvas').hidden=false;$('map-2d').setAttribute('hidden','');$('view-toggle').textContent='2D 地图';$('view-toggle').setAttribute('aria-pressed','false');scene.setView(view,false);scene.setVisible(true);scene.invalidateLabels?.();scheduleMapView();return true;
   }
   $('view-toggle').onclick=async()=>{if(!mapLocal)return;const view=currentMapView();if(twoD){if(reuseMapScene(view))return;if(mapRenderPreference===false&&mapBuildRequest){mapRenderPreference=true;cancelMapBuild();return;}mapRenderPreference=false;$('map-status').textContent='正在载入街区，当前地图仍可使用…';try{await renderMap(mapData,view,{local:mapLocal},{requireCoverage:false,force3D:true});}catch(error){if(error.name!=='AbortError')toast('三维地图暂时不可用，当前地图仍可使用。');}return;}mapRenderPreference=true;stopMapViewport();cancelMapBuild();cancel2DPan(null,false);await prepareStreamMapSvg();mountPreparedMapSvg();twoD=true;$('district-canvas').hidden=true;$('map-2d').removeAttribute('hidden');scene?.setVisible(false);$('view-toggle').textContent='3D 地图';$('view-toggle').setAttribute('aria-pressed','true');set2DView(view);for(const source of mapBaseCache.slice(0,2))showMapBase(source);scheduleMapView();};
-  for(const b of document.querySelectorAll('[data-filter]'))b.onclick=()=>{filter=b.dataset.filter;for(const node of document.querySelectorAll('[data-filter]')){node.classList.toggle('selected',node===b);node.setAttribute('aria-pressed',String(node===b));}buildingPage=0;if(selectedDistrict&&!CoopLocalPlaces.matches(selectedDistrict,filter))closeBrief(false);updateDistrictChoices();scene?.setFilter(filter==='clinic'?'hospital':filter);if(twoD)layout2D();};
+  for(const b of document.querySelectorAll('[data-filter]'))b.onclick=()=>{$('filter-label').textContent=b.textContent;closeMapMenus();filter=b.dataset.filter;for(const node of document.querySelectorAll('[data-filter]')){node.classList.toggle('selected',node===b);node.setAttribute('aria-pressed',String(node===b));}buildingPage=0;if(selectedDistrict&&!CoopLocalPlaces.matches(selectedDistrict,filter))closeBrief(false);updateDistrictChoices();scene?.setFilter(filter==='clinic'?'hospital':filter);if(twoD)layout2D();};
   new ResizeObserver(()=>{if(twoD)layout2D();}).observe($('map-2d'));
-  const flatMap=$('map-2d'),mapSurface=$('district-map');let twoDClickBlock=null;
+  const flatMap=$('map-2d'),mapSurface=$('district-map');let flatInput=null,flatNotify=true;
   function flatInputTarget(e){const marker=e.target.closest?.('button.place-marker,[data-place-marker]');return marker&&$('map-markers').contains(marker)?marker:flatMap.contains(e.target)?flatMap:null;}
   function flatDistrictAt(e){const b=flatMap.viewBox.baseVal,r=flatMap.getBoundingClientRect(),scale=Math.min(r.width/b.width,r.height/b.height);if(!(scale>0)||e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)return null;const x=(e.clientX-r.left-(r.width-b.width*scale)/2)/scale,y=(e.clientY-r.top-(r.height-b.height*scale)/2)/scale;return districts.at({east:b.x+x,north:-b.y-y},filter==='clinic'?'hospital':filter);}
-  function pan2D(e){
-    const p=twoDPointer;if(!p||p.id!==e.pointerId)return;
-    if(!p.moved&&Math.hypot(e.clientX-p.x,e.clientY-p.y)>6){p.moved=true;mapInteraction(true);}if(!p.moved)return;
-    const x=p.box.x-(e.clientX-p.x)/p.scale,y=p.box.y-(e.clientY-p.y)/p.scale;set2DView({center:mapLocal.geo.coordinate(x+p.box.width/2,-y-p.box.height/2),span:p.box.height});scheduleMapView();
+  function start2D(p){
+    const b=flatMap.viewBox.baseVal,r=flatMap.getBoundingClientRect(),scale=Math.min(r.width/b.width,r.height/b.height);if(!(scale>0))return false;
+    twoDPointer=p;p.box={x:b.x,y:b.y,width:b.width,height:b.height};p.scale=scale;p.region=p.node===flatMap?flatDistrictAt(p):null;
   }
-  mapSurface.addEventListener('pointerdown',e=>{
-    if(e.button===0&&e.isPrimary!==false&&!twoDPointer)twoDClickBlock=null;
-    if(!twoD||e.button!==0||e.isPrimary===false||twoDPointer)return;const capture=flatInputTarget(e);if(!capture)return;
-    const b=flatMap.viewBox.baseVal,r=flatMap.getBoundingClientRect(),scale=Math.min(r.width/b.width,r.height/b.height);if(!(scale>0))return;
-    const region=capture===flatMap?flatDistrictAt(e):null;
-    twoDClickBlock=null;twoDPointer={id:e.pointerId,x:e.clientX,y:e.clientY,box:{x:b.x,y:b.y,width:b.width,height:b.height},scale,moved:false,capture,region};capture.setPointerCapture(e.pointerId);
-  });
-  mapSurface.addEventListener('pointermove',pan2D);
-  function end2DPan(e){if(twoDPointer?.id!==e.pointerId)return;pan2D(e);const p=twoDPointer;twoDPointer=null;if(p.moved){twoDClickBlock=p;mapInteraction(false);scheduleMapView();}else if(p.region)selectMapDistrict(p.region);else if(p.capture===flatMap)closeBrief(false);}
-  function cancel2DPan(e=null,notify=true){const p=twoDPointer;if(!p||e&&p.id!==e.pointerId)return;twoDClickBlock=p;twoDPointer=null;if(p.capture.hasPointerCapture?.(p.id))p.capture.releasePointerCapture(p.id);if(p.moved){if(notify){mapInteraction(false);scheduleMapView();}else mapInputActive=false;}}
-  mapSurface.addEventListener('pointerup',end2DPan);mapSurface.addEventListener('pointercancel',cancel2DPan);mapSurface.addEventListener('lostpointercapture',cancel2DPan);
-  mapSurface.addEventListener('click',e=>{if(!twoDClickBlock||!(e.detail>0||e.pointerType))return;if(e.pointerId>0&&e.pointerId!==twoDClickBlock.id)return;const target=flatInputTarget(e);if(target!==flatMap&&target!==twoDClickBlock.capture)return;e.preventDefault();e.stopImmediatePropagation();},true);
+  function pan2D(p){const x=p.box.x-(p.clientX-p.x)/p.scale,y=p.box.y-(p.clientY-p.y)/p.scale;set2DView({center:mapLocal.geo.coordinate(x+p.box.width/2,-y-p.box.height/2),span:p.box.height});scheduleMapView();}
+  function pinch2DStart(p){
+    const b=flatMap.viewBox.baseVal,r=flatMap.getBoundingClientRect(),scale=Math.min(r.width/b.width,r.height/b.height);
+    p.span=b.height;p.anchor={x:b.x+b.width/2+(p.clientX-r.left-r.width/2)/scale,y:b.y+b.height/2+(p.clientY-r.top-r.height/2)/scale};
+  }
+  function pinch2D(p){
+    const r=flatMap.getBoundingClientRect(),size=Math.max(450,Math.min(5200,p.span*p.ratio)),scale=Math.min(r.width/size,r.height/size);
+    const x=p.anchor.x-(p.clientX-r.left-r.width/2)/scale,y=p.anchor.y-(p.clientY-r.top-r.height/2)/scale;
+    set2DView({center:mapLocal.geo.coordinate(x,-y),span:size});scheduleMapView();
+  }
+  function cancel2DPan(e=null,notify=true){const previous=flatNotify;flatNotify=notify;flatInput?.cancel();flatNotify=previous;if(!notify)mapInputActive=false;}
+  flatInput=LBSMapGestures.bind({surface:mapSurface,origin:flatInputTarget,enabled:()=>twoD&&!!mapLocal,blurTarget:window,start:start2D,pan:pan2D,pinchStart:pinch2DStart,pinch:pinch2D,
+    tap(p){if(p.region)selectMapDistrict(p.region);else if(p.node===flatMap)closeBrief(false);},end(){twoDPointer=null;},interaction(active){if(flatNotify){mapInteraction(active);scheduleMapView();}}});
   flatMap.addEventListener('keydown',e=>{const id=e.target.closest?.('[data-district]')?.dataset.district;if(!twoD||!id||!['Enter',' '].includes(e.key))return;e.preventDefault();if(!e.repeat){const region=districts.byId.get(id);if(region&&CoopLocalPlaces.matches(region,filter==='clinic'?'hospital':filter))selectMapDistrict(region);}});
   flatMap.addEventListener('click',e=>{if(!twoD||e.detail>0||e.pointerType)return;const id=e.target.closest?.('[data-district]')?.dataset.district,region=districts.byId.get(id);if(region&&CoopLocalPlaces.matches(region,filter==='clinic'?'hospital':filter))selectMapDistrict(region);});
-  window.addEventListener('blur',()=>cancel2DPan());
   mapSurface.addEventListener('wheel',e=>{if(!twoD||!flatInputTarget(e)||!Number.isFinite(e.deltaY))return;e.preventDefault();zoom(Math.exp(Math.max(-50,Math.min(50,e.deltaY*.001))));},{passive:false});
   function closeSheet(){
     requestVersion++;request?.abort();request=null;$('sheet').hidden=true;$('lbs-app').inert=false;
-    (returnFocus?.isConnected?returnFocus:$('region-button')).focus({preventScroll:true});
+    focusAvailable(returnFocus?.isConnected?returnFocus:$('region-button'));
   }
   $('sheet-close').onclick=closeSheet;$('sheet').addEventListener('pointerdown',event=>{if(event.target===$('sheet'))closeSheet();});
   document.addEventListener('keydown',event=>{
-    if(event.key==='Escape'){if(!$('sheet').hidden)closeSheet();else if(!$('building-browser').hidden){toggleBuildingList(false);$('building-list-toggle').focus({preventScroll:true});}else closeBrief();}
+    if(event.key==='Escape'){closeMapMenus();if(!$('sheet').hidden)closeSheet();else if(!$('building-browser').hidden){toggleBuildingList(false);focusAvailable($('building-list-toggle'));}else closeBrief();}
     if(event.key==='Tab'&&!$('sheet').hidden){const nodes=[...$('sheet').querySelectorAll('button:not([disabled]),input:not([disabled]),a[href]')],first=nodes[0],last=nodes.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}}
   });
   function showRegion(){
