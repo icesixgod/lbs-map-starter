@@ -372,6 +372,27 @@ function* buildDistrictScene(data,localPlaces,onSelect,options={}){
  const districtBoundaries=new THREE.Group();scene.add(districtBoundaries);
  const districtStyled=typeof options.districtStyle==='function',districtVisuals=new Map();
  const selectionHeight=r=>options.baseOnly||!buildingsVisible?0:r.height||0;
+ const selectedBody=new THREE.Group();scene.add(selectedBody);let selectedBodyShape=null;
+ function clearSelectedBody(){
+  for(const mesh of [...selectedBody.children]){selectedBody.remove(mesh);mesh.geometry.dispose();ownedGeometries.delete(mesh.geometry);mesh.material.dispose();ownedMaterials.delete(mesh.material);}selectedBodyShape=null;
+ }
+ function updateSelectedBody(region){
+  selectedBody.visible=!!region&&buildingsVisible&&!options.baseOnly&&CoopLocalPlaces.matches(region,filter);
+  if(!region){clearSelectedBody();return;}if(!selectedBody.visible)return;
+  const style=options.districtStyle?.(region)||{},bottom=(region.minHeight||0)+1,top=(region.height||0)+1.3;
+  if(!selectedBodyShape||selectedBodyShape.id!==region.id||selectedBodyShape.coordinates!==region.coordinates||selectedBodyShape.holes!==region.holes||selectedBodyShape.bottom!==bottom||selectedBodyShape.top!==top){
+   clearSelectedBody();
+   // Use the same walls, courtyard holes and vertical range as the live model.
+   // Depth testing keeps the tint on this building's visible facades only.
+   const geometry=ownGeometry(districtWallGeometry(geo,region.coordinates,Math.max(.1,top-bottom),region.holes));geometry.translate(0,bottom,0);
+   const fill=new THREE.Mesh(geometry,ownMaterial(new THREE.MeshBasicMaterial({transparent:true,opacity:.35,depthTest:true,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2})));
+   fill.userData.selectedBuildingBody=region.id;fill.renderOrder=3;selectedBody.add(fill);
+   const outline=new THREE.LineSegments(ownGeometry(new THREE.EdgesGeometry(geometry,25)),ownMaterial(new THREE.LineBasicMaterial({transparent:true,opacity:.85,depthTest:true,depthWrite:false})));
+   outline.userData.selectedBuildingOutline=region.id;outline.renderOrder=7;selectedBody.add(outline);
+   selectedBodyShape={id:region.id,coordinates:region.coordinates,holes:region.holes,bottom,top};
+  }
+  selectedBody.children[0].material.color.set(style.selectedColor||'#ff9f1c');selectedBody.children[1].material.color.set(style.selectedStrokeColor||'#c65300');
+ }
  const districtBoundaryMaterial=options.districtSelection&&!districtStyled?ownMaterial(new THREE.LineBasicMaterial({color:0xffedce,transparent:true,opacity:.42,depthTest:false,depthWrite:false})):null;
  const districtBoundaryEntries=[];
  if(options.districtSelection){if(!(options.streamMap&&districtStyled))for(const r of options.districtSelection.regions){
@@ -381,12 +402,13 @@ function* buildDistrictScene(data,localPlaces,onSelect,options={}){
  }root.dataset.districtSelection=String(options.districtSelection.regions.length);}
  function updateDistrictStyles(){
   if(!districtStyled)return;const selectedRegion=options.districtSelection?.forPlace(selected);
+  updateSelectedBody(selectedRegion);
   if(options.streamMap&&(!selectedRegion||!districtVisuals.has(selectedRegion.id))){
    for(const visual of districtVisuals.values())for(const mesh of [visual.fill,...visual.lines]){districtBoundaries.remove(mesh);mesh.geometry.dispose();ownedGeometries.delete(mesh.geometry);mesh.material.dispose();ownedMaterials.delete(mesh.material);}districtVisuals.clear();
    if(selectedRegion){const r=selectedRegion,geometry=polygon(r.coordinates,0,r.holes);const fill=new THREE.Mesh(geometry,ownMaterial(new THREE.MeshBasicMaterial({transparent:true,opacity:.3,side:THREE.DoubleSide,depthTest:false,depthWrite:false})));districtBoundaries.add(fill);const lines=r.rings.map(ring=>{const line=new THREE.Line(ownGeometry(new THREE.BufferGeometry().setFromPoints(ring.map(([x,y])=>new THREE.Vector3(x,0,-y)))),ownMaterial(new THREE.LineBasicMaterial({transparent:true,opacity:1,depthTest:false,depthWrite:false})));districtBoundaries.add(line);return line;});districtVisuals.set(r.id,{region:r,fill,lines});}
   }
   for(const visual of districtVisuals.values()){const r=visual.region,style=options.districtStyle(r)||{},visible=CoopLocalPlaces.matches(r,filter),chosen=visible&&selectedRegion?.id===r.id,color=chosen?(style.selectedColor||'#ff9f1c'):(style.color||'#ffedce'),opacity=chosen?(style.selectedOpacity??.3):(style.fillOpacity??.1);
-   visual.fill.visible=visible;visual.fill.position.y=selectionHeight(r)+1.6;visual.fill.material.color.set(color);visual.fill.material.opacity=opacity;visual.fill.renderOrder=chosen?3:1;
+   visual.fill.visible=visible;visual.fill.position.y=selectionHeight(r)+1.6;visual.fill.material.color.set(color);visual.fill.material.opacity=opacity;visual.fill.material.depthTest=chosen;visual.fill.renderOrder=chosen?3:1;
    for(const line of visual.lines){line.visible=visible;line.position.y=selectionHeight(r)+1.8;line.material.color.set(chosen?(style.selectedStrokeColor||'#c65300'):color);line.material.opacity=chosen?1:.42;line.renderOrder=chosen?7:2;}
   }
  }
@@ -400,11 +422,13 @@ function* buildDistrictScene(data,localPlaces,onSelect,options={}){
  let highlightedDistrict;
  function highlight(){
   if(districtStyled&&options.districtSelection){updateDistrictStyles();labelsDirty=true;dirty=true;return;}
+  updateSelectedBody(options.districtSelection?.forPlace(selected));
   if(options.districtSelection){const region=options.districtSelection.forPlace(selected);if(region===highlightedDistrict){selection.visible=!!region&&CoopLocalPlaces.matches(region,filter);labelsDirty=true;dirty=true;return;}}
   return districtDrain(highlightSteps());
  }
  function* highlightSteps(){
   if(districtStyled&&options.districtSelection){updateDistrictStyles();labelsDirty=true;dirty=true;return;}
+  updateSelectedBody(options.districtSelection?.forPlace(selected));
   while(selection.children.length){const child=selection.children[0];child.geometry.dispose();ownedGeometries.delete(child.geometry);child.material.dispose();selection.remove(child);}
   if(!selected){highlightedDistrict=undefined;return;}
   if(options.districtSelection){const region=options.districtSelection.forPlace(selected);highlightedDistrict=region;selection.visible=!!region&&CoopLocalPlaces.matches(region,filter);if(region){const g=polygon(region.coordinates,0,region.holes);g.translate(0,selectionHeight(region)+1.6,0);const fill=new THREE.Mesh(g,new THREE.MeshBasicMaterial({color:0xff9f1c,transparent:true,opacity:.3,side:THREE.DoubleSide,depthTest:false,depthWrite:false}));fill.renderOrder=3;selection.add(fill);for(const ring of region.rings){const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints(ring.map(([x,y])=>new THREE.Vector3(x,selectionHeight(region)+1.8,-y))),new THREE.LineBasicMaterial({color:0xc65300,depthTest:false,depthWrite:false}));line.renderOrder=7;selection.add(line);}}labelsDirty=true;dirty=true;return;}

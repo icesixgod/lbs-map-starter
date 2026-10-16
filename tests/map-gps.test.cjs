@@ -3,7 +3,7 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const Geography=require('../src/coop-geography.js'),Places=require('../src/coop-local-places.js'),Blocks=require('../src/coop-city-blocks.js'),Buildings=require('../src/lbs-map-buildings.js'),Work=require('../src/lbs-map-work.js'),LBS=require('../src/map-model.js'),Three=require('../src/vendor/three-0.160.1.min.js');
 const sceneSource=fs.readFileSync(require.resolve('../src/coop-district-scene.js'),'utf8'),clientSource=fs.readFileSync(require.resolve('../src/map-client.js'),'utf8');
 function fixture(count=1){const data={center:{lat:30.21,lon:120.21,crs:'WGS84'},radiusMeters:3000,extentMeters:4350,features:[],places:[],gameNodes:[]},geo=Geography.create(data);for(let i=0;i<count;i++){const x=i%20*30,y=Math.floor(i/20)*30;data.features.push({id:'body-'+i,kind:'building',tags:{building:'yes',height:'28',min_height:'4'},coordinates:[[x,y],[x+20,y],[x+20,y+20],[x,y+20],[x,y]].map(([east,north])=>{const p=geo.coordinate(east,north);return[p.lon,p.lat];}),holes:[]});}return data;}
-function artFixture(THREE=Three){const materials=new Map();return{hash:Buildings.hash,materials,counts:{},textureState:'procedural',destroy(){},surface(){return new THREE.MeshStandardMaterial();},buildingMaterial(kind,roof,variant){const key=kind+roof+variant;if(!materials.has(key))materials.set(key,new THREE.MeshStandardMaterial());return materials.get(key);},*uvSteps(g,scale=25,anchor={east:0,north:0}){const p=g.attributes.position,uv=new Float32Array(p.count*2);for(let i=0;i<p.count;i++){uv[i*2]=(p.getX(i)-anchor.east)/scale;uv[i*2+1]=p.getY(i)/scale;if(i%32===0)yield 'uv';}g.setAttribute('uv',new THREE.BufferAttribute(uv,2));},*dressSteps(){}};}
+function artFixture(THREE=Three){const materials=new Map();return{hash:Buildings.hash,materials,counts:{},textureState:'procedural',roofAnchor:()=>null,destroy(){},surface(){return new THREE.MeshStandardMaterial();},buildingMaterial(kind,roof,variant){const key=kind+roof+variant;if(!materials.has(key))materials.set(key,new THREE.MeshStandardMaterial());return materials.get(key);},*uvSteps(g,scale=25,anchor={east:0,north:0}){const p=g.attributes.position,uv=new Float32Array(p.count*2);for(let i=0;i<p.count;i++){uv[i*2]=(p.getX(i)-anchor.east)/scale;uv[i*2+1]=p.getY(i)/scale;if(i%32===0)yield 'uv';}g.setAttribute('uv',new THREE.BufferAttribute(uv,2));},*dressSteps(){}};}
 function sceneContext(extra={}){const context=vm.createContext({LBSMapGestures:require('../src/map-gestures.js'),THREE:Three,CoopGeography:Geography,CoopLocalPlaces:Places,CoopCityBlocks:Blocks,polygonClipping:require('../src/vendor/polygon-clipping-0.15.7.min.js'),...extra});vm.runInContext(sceneSource,context);return context;}
 
 test('GPS fixes follow the player without resetting zoom and old fixes cannot move the map backwards',()=>{
@@ -82,5 +82,33 @@ test('the selected building stays highlighted when a streamed window replaces it
  const fill=highlight();assert.ok(fill);assert.equal(fill.material.opacity,.3);
  const replacement=Districts.restore(selection.regions,local);assert.notEqual(replacement.regions[0],original);assert.equal(replacement.regions[0].id,original.id);
  scene.setDistrictSelection(replacement);scene.setSelected(replacement.regions[0]);scene.preparePresentation(view,{width:1280,height:720});assert.equal(highlight().material.opacity,.3);assert.equal(highlight().material.color.getHexString(),'ff9f1c');
+ await scene.destroyAsync({replaceCanvas:false,preserveMetadata:true});
+});
+
+test('whole-building selection follows facades and courtyard walls, preserves raised floors and releases the previous highlight',async()=>{
+ const Districts=require('../src/coop-district-scene.js'),data=fixture(2),geo=Geography.create(data);
+ data.features[0].holes=[[[5,5],[15,5],[15,15],[5,15],[5,5]].map(([x,y])=>{const p=geo.coordinate(x,y);return[p.lon,p.lat];})];
+ const local=Places.create(data,{detail:true}),selection=Districts.create(data,local),art=artFixture(),root={dataset:{}};let drawn;
+ class Renderer{constructor(){this.shadowMap={};}setPixelRatio(){}setSize(){}render(scene){drawn=scene;}dispose(){}}
+ const context=sceneContext({THREE:{...Three,WebGLRenderer:Renderer},LBSMapWork:Work,devicePixelRatio:1,requestAnimationFrame:()=>1,cancelAnimationFrame(){},LBSCityArt:{palette:{},*createSteps(){return art;}}});
+ const view={center:data.center,span:900,radius:1000},scene=context.districtDrain(context.buildDistrictScene(data,local,()=>{},{canvas:{},container:{},root,staged:true,detailedCity:true,streamMap:true,detailView:view,mapLabelCandidates:()=>[],districtSelection:selection,districtStyle:LBS.districtTheme}));
+ const first=selection.regions.find(r=>r.holes.length),second=selection.regions.find(r=>!r.holes.length);
+ const bodies=()=>{const found=[];drawn.traverse(object=>{if(object.userData.selectedBuildingBody)found.push(object);});return found;};
+ scene.setSelected(first);scene.preparePresentation(view,{width:390,height:780});drawn.updateMatrixWorld(true);
+ const body=bodies()[0];assert.equal(bodies().length,1);assert.equal(body.userData.selectedBuildingBody,first.id);assert.equal(body.material.depthTest,true);assert.equal(body.material.depthWrite,false);assert.equal(body.material.polygonOffset,true);
+ body.geometry.computeBoundingBox();const box=body.geometry.boundingBox;
+ assert.ok(Math.abs(box.min.y-5)<.001);assert.ok(Math.abs(box.max.y-29.3)<.001);assert.equal(body.geometry.attributes.position.count,48,'both outer and courtyard walls cover the full height');
+ const ray=new Three.Raycaster(new Three.Vector3(10,14,-10),new Three.Vector3(1,0,0)),innerWall=ray.intersectObject(body)[0];
+ assert.ok(innerWall&&Math.abs(innerWall.distance-5)<.001,'the courtyard faces remain selectable surfaces without filling the empty space');
+ const flatFill=[];drawn.traverse(object=>{if(object.isMesh&&object.renderOrder===3&&!object.userData.selectedBuildingBody)flatFill.push(object);});
+ ray.set(new Three.Vector3(10,50,-10),new Three.Vector3(0,-1,0));assert.equal(flatFill.flatMap(mesh=>ray.intersectObject(mesh)).length,0,'selection leaves the courtyard roof open');
+ scene.setSelected(first);scene.invalidateLabels();assert.equal(bodies()[0].geometry,body.geometry,'repainting the same selection reuses its geometry');
+ scene.setBuildingsVisible(false);assert.equal(body.parent.visible,false);scene.setBuildingsVisible(true);assert.equal(body.parent.visible,true);
+ scene.setFilter('hospital');assert.equal(body.parent.visible,false);scene.setFilter('all');assert.equal(body.parent.visible,true);
+ let released=0;body.geometry.addEventListener('dispose',()=>released++);
+ const replacement=Districts.restore(selection.regions.map(r=>({...r,coordinates:r.coordinates.map(p=>[...p]),holes:r.holes.map(ring=>ring.map(p=>[...p]))})),local);
+ scene.setDistrictSelection(replacement);scene.setSelected(replacement.byId.get(first.id));assert.equal(bodies().length,1);assert.equal(bodies()[0].userData.selectedBuildingBody,first.id);assert.equal(released,1,'a streamed replacement releases the old wall overlay');
+ scene.setSelected(replacement.byId.get(second.id));assert.equal(bodies().length,1);assert.equal(bodies()[0].userData.selectedBuildingBody,second.id);
+ const last=bodies()[0];last.geometry.addEventListener('dispose',()=>released++);scene.setSelected(null);assert.equal(bodies().length,0);assert.equal(released,2);
  await scene.destroyAsync({replaceCanvas:false,preserveMetadata:true});
 });
