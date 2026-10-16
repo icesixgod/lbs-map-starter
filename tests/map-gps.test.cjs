@@ -112,3 +112,20 @@ test('whole-building selection follows facades and courtyard walls, preserves ra
  const last=bodies()[0];last.geometry.addEventListener('dispose',()=>released++);scene.setSelected(null);assert.equal(bodies().length,0);assert.equal(released,2);
  await scene.destroyAsync({replaceCanvas:false,preserveMetadata:true});
 });
+
+test('a connected building highlights every original volume without extruding its union to the tallest roof',async()=>{
+ const Districts=require('../src/coop-district-scene.js'),data=fixture(2);data.features[0].tags={building:'yes',height:'8'};
+ data.features[1].coordinates=data.features[0].coordinates.map(p=>[...p]);data.features[1].tags={building:'yes',height:'64',min_height:'8'};
+ const local=Places.create(data,{detail:true}),selection=Districts.create(data,local),group=selection.regions[0],art=artFixture(),root={dataset:{}};let drawn;
+ assert.equal(selection.regions.length,1);assert.equal(group.partCount,2);
+ class Renderer{constructor(){this.shadowMap={};}setPixelRatio(){}setSize(){}render(scene){drawn=scene;}dispose(){}}
+ const context=sceneContext({THREE:{...Three,WebGLRenderer:Renderer},LBSMapWork:Work,devicePixelRatio:1,requestAnimationFrame:()=>1,cancelAnimationFrame(){},LBSCityArt:{palette:{},*createSteps(){return art;}}});
+ const view={center:data.center,span:900,radius:1000},scene=context.districtDrain(context.buildDistrictScene(data,local,()=>{},{canvas:{},container:{},root,staged:true,detailedCity:true,streamMap:true,detailView:view,mapLabelCandidates:()=>[],districtSelection:selection,districtStyle:LBS.districtTheme}));
+ const overlays=key=>{const found=[];drawn.traverse(o=>{if(o.userData[key])found.push(o);});return found;};
+ scene.setSelected(selection.byId.get(group.parts[1].id));scene.preparePresentation(view,{width:390,height:844});
+ const bodies=overlays('selectedBuildingBody'),roofs=overlays('selectedBuildingRoof');assert.equal(bodies.length,2);assert.equal(roofs.length,2);
+ for(let i=0;i<2;i++){const part=group.parts[i],body=bodies[i],roof=roofs[i];body.geometry.computeBoundingBox();roof.geometry.computeBoundingBox();assert.equal(body.userData.selectedBuildingBody,group.id);assert.equal(roof.userData.selectedBuildingRoof,group.id);assert.ok(Math.abs(body.geometry.boundingBox.min.y-(part.minHeight+1))<.001);assert.ok(Math.abs(body.geometry.boundingBox.max.y-(part.height+1.3))<.001);assert.ok(Math.abs(roof.geometry.boundingBox.min.y-(part.height+1.6))<.001);}
+ scene.setSelected(selection.byId.get(group.parts[0].id));assert.equal(overlays('selectedBuildingBody')[0].geometry,bodies[0].geometry,'selecting another part reuses the same whole-building highlight');
+ let released=0;for(const body of bodies)body.geometry.addEventListener('dispose',()=>released++);scene.setSelected(null);assert.equal(overlays('selectedBuildingBody').length,0);assert.equal(released,2);
+ await scene.destroyAsync({replaceCanvas:false,preserveMetadata:true});
+});

@@ -65,7 +65,7 @@
   }
   function renderBuildingSelection(){
     const r=selectedDistrict;if(!r){$('building-inspector').hidden=true;return;}
-    if(inspectedId!==r.id){inspectedId=r.id;setBuildingDetails(false);}
+    if(inspectedId!==r.id&&!r.memberIds?.includes(inspectedId))setBuildingDetails(false);inspectedId=r.id;
     selected=r;$('building-name').textContent=r.name;$('building-kind').textContent=CoopLocalPlaces.types[r.kind]?.label||'普通建筑';
     $('building-height').textContent=Number.isFinite(r.height)?Math.round(r.height*10)/10+' m':'—';$('building-area').textContent=Number.isFinite(r.area)?r.area.toLocaleString()+' m²':'—';
     $('building-height-note').textContent=r.heightSource==='map-height'?'高度来自地图标注':r.heightSource==='map-levels'?'高度按地图标注楼层估算':'高度为地图展示估算值';
@@ -113,7 +113,7 @@
   function rememberPreparedMap(next,basis,scoped,nextDistricts){
     const model=scoped.value.local;let units=model.buildings.length+model.places.length+(model.allPlaces?.length||0)+(model.sourcePlaces?.length||0);if(units>preparedMapCacheUnits)return;
     for(const b of model.sourceBuildings||model.buildings){for(const f of CoopLocalPlaces.footprints(b))units+=f.coordinates.length+(f.holes||[]).reduce((n,r)=>n+r.length,0);if(units>preparedMapCacheUnits)return;}
-    for(const r of nextDistricts.regions){units+=1+r.rings.reduce((n,ring)=>n+ring.length,0)+r.coordinates.length+r.holes.reduce((n,ring)=>n+ring.length,0)+r.buildingIds.length+r.placeIds.length;if(units>preparedMapCacheUnits)return;}
+    for(const r of nextDistricts.regions){units+=1+r.rings.reduce((n,ring)=>n+ring.length,0)+r.coordinates.length+r.holes.reduce((n,ring)=>n+ring.length,0)+r.buildingIds.length+r.placeIds.length;for(const part of r.parts||[])units+=part.coordinates.length+part.rings.reduce((n,ring)=>n+ring.length,0)+part.holes.reduce((n,ring)=>n+ring.length,0)+part.buildingIds.length;if(units>preparedMapCacheUnits)return;}
     preparedMapCache=preparedMapCache.filter(e=>e.data!==next);preparedMapCache.unshift({data:next,basisData:basis.data,scoped:scoped.value,districts:nextDistricts,units});
     while(preparedMapCache.length>preparedMapCacheLimit||preparedMapCache.reduce((n,e)=>n+e.units,0)>preparedMapCacheUnits)preparedMapCache.pop();
   }
@@ -133,6 +133,7 @@
   function cancelMapBuild(){mapBuildRequest?.abort();mapBuildRequest=null;}
   function* scopeMapSteps(next,nextLocal,basis,fresh){
     const unscoped=nextLocal;nextLocal={...unscoped,buildings:[],places:[],allPlaces:[],sourcePlaces:[]};const copies=new Map();
+    nextLocal.selectionLandmarks=[...new Map([...(basis?.local?.selectionLandmarks||[]),...(unscoped.selectionLandmarks||[])].map(p=>[p.osmWay,p])).values()];
     function copy(value){if(!copies.has(value))copies.set(value,{...value});return copies.get(value);}
     for(const b of unscoped.buildings){nextLocal.buildings.push(copy(b));yield 'copy-view-buildings';}
     for(const key of['places','allPlaces','sourcePlaces'])for(const p of unscoped[key]||[]){nextLocal[key].push(copy(p));yield 'copy-view-places';}
@@ -145,7 +146,7 @@
     for(const kind of['water','park','road'])for(const f of next.features){if(f.kind===kind&&f.coordinates.length>1){let holes='';if(kind!=='road')for(const ring of f.holes||[])holes+=' '+(yield* path(ring))+'Z';pieces.push('<path class="'+esc(f.kind)+'" fill-rule="evenodd"'+(kind==='road'?' style="stroke-width:'+CoopCityBlocks.roadWidth(f)+'"':'')+' d="'+(yield* path(f.coordinates))+(kind==='road'?'':'Z'+holes)+'"/>');}if(pieces.length>=80)flush();yield 'svg-features';}
     for(const b of nextLocal.sourceBuildings||nextLocal.buildings){if(!b.underground&&!b.incomplete){let holes='';for(const ring of b.holes||[])holes+=(yield* path(ring))+'Z ';pieces.push('<path class="footprint" data-building="'+esc(b.id)+'" fill-rule="evenodd" d="'+(yield* path(b.coordinates))+'Z '+holes.trimEnd()+'"/>');}if(pieces.length>=80)flush();yield 'svg-buildings';}
     pieces.push('<circle id="player-ring-2d" r="80" fill="#54b3ed30" stroke="#6cbcdf" stroke-width="4"/>');
-    for(const region of nextDistricts.regions){let holes='';for(const ring of region.holes)holes+=(yield* path(ring))+'Z ';pieces.push('<path class="district-region" data-district="'+esc(region.id)+'" data-boundary-source="'+esc(region.boundarySource||'building')+'" role="button" tabindex="0" aria-label="'+esc(region.name)+'，'+region.buildingCount+'栋地图建筑" aria-pressed="false" fill-rule="evenodd" d="'+(yield* path(region.coordinates))+'Z '+holes.trimEnd()+'"/>');if(pieces.length>=80)flush();yield 'svg-districts';}flush();yield 'svg-ready';return prepared;
+    for(const region of nextDistricts.regions){let outline='';for(const shape of region.footprints||[{coordinates:region.coordinates,holes:region.holes}]){outline+=(yield* path(shape.coordinates))+'Z ';for(const ring of shape.holes||[])outline+=(yield* path(ring))+'Z ';}pieces.push('<path class="district-region" data-district="'+esc(region.id)+'" data-boundary-source="'+esc(region.boundarySource||'building')+'" role="button" tabindex="0" aria-label="'+esc(region.name)+(region.partCount?'，含 '+region.partCount+' 个楼体部件':'')+'" aria-pressed="false" fill-rule="evenodd" d="'+outline.trimEnd()+'"/>');if(pieces.length>=80)flush();yield 'svg-districts';}flush();yield 'svg-ready';return prepared;
   }
   function selectMapDistrict(region,focus=false){
     if(!region)return;if(compactMap())toggleBuildingList(false);selectedDistrict=region;selected=region;scene?.setSelected(region,false);renderBuildingSelection();if(focus)focusSelectedBuilding();
@@ -160,8 +161,8 @@
     const buildings=[...byBuilding.values()],nextLocal={...model.local,geo,buildings,sourceBuildings:buildings};
     for(const key of['places','allPlaces','sourcePlaces']){nextLocal[key]=[];for(const p of model.local[key]||[]){nextLocal[key].push(copy(p));yield 'live-model-places';}}
     const scoped=yield*scopeMapSteps(model.data,nextLocal,basis,true);
-    const incoming=model.districtRegions?yield*CoopDistrictSelection.projectSteps(model.districtRegions,geo):(yield*CoopDistrictSelection.createSteps(model.data,scoped.local)).regions,regions=new Map(incoming.map(r=>[r.id,r]));
-    for(const r of currentDistricts.regions){if(!regions.has(r.id)&&(r.id===selectedDistrict?.id||r.buildingIds.some(id=>currentScene.hasBuilding(id))))regions.set(r.id,r);yield 'live-model-selection-retain';}
+    const incoming=model.districtRegions?yield*CoopDistrictSelection.projectSteps(model.districtRegions,geo):(yield*CoopDistrictSelection.createSteps(model.data,scoped.local)).regions,regions=new Map(incoming.map(r=>[r.id,r])),seenParts=new Set(incoming.flatMap(r=>(r.parts||[r]).map(p=>p.id)));
+    for(const r of currentDistricts.regions)for(const part of r.parts||[r]){if(!seenParts.has(part.id)&&(r.id===selectedDistrict?.id||part.buildingIds.some(id=>currentScene.hasBuilding(id)))){regions.set(part.id,part);seenParts.add(part.id);}yield 'live-model-selection-retain';}
     const nextDistricts=yield*CoopDistrictSelection.restoreSteps([...regions.values()],scoped.local);
     return{...scoped,districts:nextDistricts};
   }

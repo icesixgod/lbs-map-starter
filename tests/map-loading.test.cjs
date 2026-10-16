@@ -319,10 +319,10 @@ test('3D roof and facade hits choose the visible building even when their ground
   assert.equal(model.at({east:100,north:48.7}),null);assert.equal(model.raycast(roof).id,r.id);assert.equal(model.raycast(wall).id,r.id);assert.equal(model.raycast(roof,'residence'),null);assert.equal(model.raycast(roof,'all',new Set(['2'])),null);assert.equal(model.at({east:180,north:100},'hospital'),null);
 });
 
-test('overlapping building bodies remain independent and explicit task membership chooses just one',()=>{
+test('physically connected vertical parts share selection while their rendered heights stay independent',()=>{
   const data=fixture([[100,100,80,60],[105,100,25,25]]);data.features[0].tags.height='8';data.features[1].tags={building:'commercial',height:'64',min_height:'8'};
   const local=Places.create(data,{detail:true}),model=Districts.create(data,local),upper=model.at({east:105,north:100}),lower=model.forPlace({...local.buildings[0],buildingIds:[1]});
-  assert.equal(model.regions.length,2);assert.notEqual(upper.id,lower.id);assert.deepEqual(lower.buildingIds,['1']);assert.deepEqual(upper.buildingIds,['2']);assert.equal(model.raycast({origin:{x:105,y:200,z:-100},direction:{x:0,y:-1,z:0}}).id,upper.id);
+  assert.equal(local.sourceBuildings.length,2);assert.deepEqual(local.sourceBuildings.map(b=>[b.height,b.minHeight]),[[8,0],[64,8]]);assert.equal(model.regions.length,1);assert.equal(upper.id,lower.id);assert.deepEqual(lower.buildingIds.slice().sort(),['1','2']);assert.equal(upper.partCount,2);assert.equal(model.raycast({origin:{x:105,y:200,z:-100},direction:{x:0,y:-1,z:0}}).id,upper.id);
 });
 
 
@@ -333,10 +333,10 @@ test('a cached full map with insufficient forward coverage requests a new window
   const job=s.context.loadMapDetails(view,0);assert.equal(s.requests.length,1);s.respond(0,view.center);await job;assert.equal(s.commits.length,1);assert.notEqual(s.commits[0].next,old);
 });
 
-test('real Binjiang buildings keep their own footprints across a shifted loading origin',()=>{
+test('real Binjiang connected selections preserve every part across a shifted loading origin',()=>{
   const data=require('./fixtures/binjiang-map.json'),before=JSON.stringify(data),local=Places.create(data,{detail:true}),first=Districts.create(data,local),moved={...data,center:{...data.center,...local.geo.coordinate(100,-80)}},nextLocal=Places.create(moved,{detail:true}),next=Districts.create(moved,nextLocal);
-  assert.equal(first.regions.length,local.sourceBuildings.filter(b=>!b.underground&&!b.hidden3D&&!b.incomplete).length);assert.ok(first.regions.every(r=>r.boundarySource==='building'&&r.buildingCount===1));
-  for(const a of first.regions){const b=next.byId.get(a.id);assert.ok(b);assert.equal(a.name,b.name);assert.deepEqual(a.coordinates,b.coordinates);assert.equal(a.area,b.area);}
+  const leaves=first.regions.flatMap(r=>r.parts||[r]);assert.equal(leaves.length,local.sourceBuildings.filter(b=>!b.underground&&!b.hidden3D&&!b.incomplete).length);assert.ok(first.regions.every(r=>r.boundarySource==='building'&&r.buildingCount===1));
+  for(const a of first.regions){const b=next.byId.get(a.id);assert.ok(b);assert.equal(a.name,b.name);assert.deepEqual((a.parts||[a]).map(p=>[p.id,p.coordinates]),(b.parts||[b]).map(p=>[p.id,p.coordinates]));assert.ok(Math.abs(a.area-b.area)<=1);}
   assert.equal(JSON.stringify(data),before);
 });
 

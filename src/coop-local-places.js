@@ -62,7 +62,7 @@
    const kind=campus&&['generic','school','hospital'].includes(ownKind)?campus.kind:ownKind;
    const levels=parseFloat(f.tags?.['building:levels']),tagHeight=parseFloat(f.tags?.height),hasHeight=Number.isFinite(tagHeight)&&tagHeight>0,hasLevels=Number.isFinite(levels)&&levels>0,height=hasHeight?tagHeight:hasLevels?levels*3.2:estimatedHeight(f.id,kind);
    const minimum=parseFloat(f.tags?.min_height??f.tags?.['building:min_level']*3.2),top=Math.min(220,height),minHeight=Number.isFinite(minimum)?Math.max(0,Math.min(top-.1,minimum)):0;
-   return{...f,...c,...local,kind,height:top,minHeight,heightSource:hasHeight?'map-height':hasLevels?'map-levels':'estimated',modelOrigin:data.source?.provider||'osm',incomplete:f.geometryComplete===false,hidden3D:!!f.hidden3D||f.geometryComplete===false,underground:Number(f.tags?.layer)<0||['underground','underwater'].includes(f.tags?.location),facilityId:campus?.id||null,facilityName:campus?.name||f.name||'',source:f.source||'https://www.openstreetmap.org/way/'+f.id};
+   return{...f,...c,...local,kind,height:top,minHeight,connectionHeight:height,connectionMinHeight:Number.isFinite(minimum)?Math.max(0,minimum):0,heightSource:hasHeight?'map-height':hasLevels?'map-levels':'estimated',modelOrigin:data.source?.provider||'osm',incomplete:f.geometryComplete===false,hidden3D:!!f.hidden3D||f.geometryComplete===false,underground:Number(f.tags?.layer)<0||['underground','underwater'].includes(f.tags?.location),facilityId:campus?.id||null,facilityName:campus?.name||f.name||'',source:f.source||'https://www.openstreetmap.org/way/'+f.id};
   });
   const index=spatialIndex(buildings,geo);
   for(const p of allPlaces){
@@ -99,7 +99,7 @@
    }else if(p){b.name=p.name;b.facilityName=p.name;}else if(!b.name)b.name=types[b.kind].label;
   }
   const counts={};for(const b of buildings.filter(b=>geo.contains(b.lon,b.lat)&&!b.underground))counts[b.kind]=(counts[b.kind]||0)+1;
-  const local={geo,buildings,sourceBuildings,places:featured,allPlaces,counts,types,buildingMerge:{...merged.stats,total:buildings.length,groups:merged.stats.groups+grouped.stats.groups,removed:merged.stats.removed+grouped.stats.removed,overlapGroups:merged.stats.groups,overlapRemoved:merged.stats.removed},streetGrouping:grouped.stats};
+  const local={geo,buildings,sourceBuildings,places:featured,allPlaces,counts,types,selectionLandmarks:data.center.osmWay&&data.center.name?[data.center]:[],buildingMerge:{...merged.stats,total:buildings.length,groups:merged.stats.groups+grouped.stats.groups,removed:merged.stats.removed+grouped.stats.removed,overlapGroups:merged.stats.groups,overlapRemoved:merged.stats.removed},streetGrouping:grouped.stats};
   if(options.detail)return local;
   const blocks=CityBlocks.create(data,local);
   return{...local,...blocks,sourcePlaces:featured};

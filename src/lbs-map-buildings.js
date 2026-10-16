@@ -10,7 +10,7 @@
  function describe(b){
   let area=b.modelArea;if(!Number.isFinite(area)){const geo=Geography.create({center:{lon:b.lon,lat:b.lat,crs:'WGS84'},radiusMeters:1000}),rings=[b.coordinates,...(b.holes||[])].map(r=>r.map(c=>{const p=geo.local(...c);return[p.east,p.north];}));area=0;for(const [i,r]of rings.entries()){let a=0;for(let j=1;j<r.length;j++)a+=r[j-1][0]*r[j][1]-r[j][0]*r[j-1][1];area+=(i?-1:1)*Math.abs(a)/2;}}
   const shapeKey=b.shapeKey||fingerprint(b),modelId=b.modelId||'model-'+alias(b)+'|'+shapeKey;
-  return{modelId,shapeKey,aliases:[...new Set([...(b.modelAliases||[]),alias(b)])].slice(-8),lon:b.lon,lat:b.lat,coordinates:b.coordinates,holes:b.holes||[],height:b.height,minHeight:b.minHeight||0,heightSource:b.heightSource,kind:b.kind,modelOrigin:b.modelOrigin||'osm',source:b.source,area};
+  return{modelId,shapeKey,aliases:[...new Set([...(b.modelAliases||[]),alias(b)])].slice(-8),lon:b.lon,lat:b.lat,coordinates:b.coordinates,holes:b.holes||[],height:b.height,minHeight:b.minHeight||0,connectionHeight:b.connectionHeight??b.height,connectionMinHeight:b.connectionMinHeight??b.minHeight??0,heightSource:b.heightSource,kind:b.kind,modelOrigin:b.modelOrigin||'osm',source:b.source,area};
  }
  function create(initial=[],options={}){
   const records=new Map(),transient=new Map(),cells=new Map(),coverage=new Map(),aliases=new Map(),maxEntries=options.maxEntries||24000;let pinned=0;
@@ -49,7 +49,7 @@
      for(const r of owners){const basis=Geography.create({center:{lon:b.lon,lat:b.lat,crs:'WGS84'},radiusMeters:1000}),shape=value=>[value.coordinates,...value.holes].map(r=>r.map(c=>{const p=basis.local(...c);return[p.east,p.north];}));let overlap=0;try{for(const polygon of clipping.intersection(shape(r),shape(description)))for(const [i,ring]of polygon.entries()){let a=0;for(let j=1;j<ring.length;j++)a+=ring[j-1][0]*ring[j][1]-ring[j][0]*ring[j-1][1];overlap+=(i?-1:1)*Math.abs(a)/2;}}catch{continue;}if(overlap/Math.min(r.area,description.area)>.7){stats.suppressed++;return null;}}
     }
     if(fixed){claimed.add(fixed);stats.reused++;}else{fixed=description;stats.created++;}
-    const point=geo.local(fixed.lon,fixed.lat);return{...b,...point,lon:fixed.lon,lat:fixed.lat,coordinates:fixed.coordinates,holes:fixed.holes,height:fixed.height,minHeight:fixed.minHeight,heightSource:fixed.heightSource,kind:fixed.kind,source:fixed.source||b.source,modelOrigin:fixed.modelOrigin,modelId:fixed.modelId,shapeKey:fixed.shapeKey,modelArea:fixed.area,modelAliases:[...new Set([...fixed.aliases,alias(b)])].slice(-8)};
+    const point=geo.local(fixed.lon,fixed.lat);return{...b,...point,lon:fixed.lon,lat:fixed.lat,coordinates:fixed.coordinates,holes:fixed.holes,height:fixed.height,minHeight:fixed.minHeight,connectionHeight:fixed.connectionHeight,connectionMinHeight:fixed.connectionMinHeight,heightSource:fixed.heightSource,kind:fixed.kind,source:fixed.source||b.source,modelOrigin:fixed.modelOrigin,modelId:fixed.modelId,shapeKey:fixed.shapeKey,modelArea:fixed.area,modelAliases:[...new Set([...fixed.aliases,alias(b)])].slice(-8)};
    }).filter(Boolean);
    // Adjacent source windows may repeat one canonical body. Merge its aliases
    // before retaining old models so it cannot acquire a second selection ID.

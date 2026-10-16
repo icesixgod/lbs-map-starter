@@ -1,6 +1,5 @@
-// Each mapped building is one selection unit, shared by the 2D and 3D maps.
-// This model preserves mapped coordinates, footprints and building uses.
-(function(root,factory){if(typeof module==='object'&&module.exports)module.exports=factory(require('./coop-local-places.js'));else root.CoopDistrictSelection=factory(root.CoopLocalPlaces);})(typeof globalThis!=='undefined'?globalThis:this,function(LocalPlaces){
+// Connected building parts share a selection; their rendered bodies stay intact.
+(function(root,factory){if(typeof module==='object'&&module.exports)module.exports=factory(require('./coop-local-places.js'),require('./vendor/polygon-clipping-0.15.7.min.js'),require('./coop-city-blocks.js'));else root.CoopDistrictSelection=factory(root.CoopLocalPlaces,root.polygonClipping,root.CoopCityBlocks);})(typeof globalThis!=='undefined'?globalThis:this,function(LocalPlaces,clipping,CityBlocks){
  'use strict';
  const bounds=rings=>rings.flat().reduce((b,[x,y])=>[Math.min(b[0],x),Math.min(b[1],y),Math.max(b[2],x),Math.max(b[3],y)],[Infinity,Infinity,-Infinity,-Infinity]);
  function area(rings){return rings.reduce((n,ring,i)=>{let a=0;const [x,y]=ring[0];for(let j=1;j<ring.length;j++)a+=(ring[j-1][0]-x)*(ring[j][1]-y)-(ring[j][0]-x)*(ring[j-1][1]-y);return n+(i?-1:1)*Math.abs(a)/2;},0);}
@@ -9,13 +8,60 @@
  function anchor(rings){const b=bounds(rings);for(const fraction of[.50001,.37,.63,.21,.79]){const y=b[1]+(b[3]-b[1])*fraction,xs=[];for(const r of rings)for(let i=1;i<r.length;i++){const a=r[i-1],c=r[i];if((a[1]>y)!==(c[1]>y))xs.push(a[0]+(c[0]-a[0])*(y-a[1])/(c[1]-a[1]));}xs.sort((a,b)=>a-b);let best=null;for(let i=0;i+1<xs.length;i+=2){const p=[(xs[i]+xs[i+1])/2,y];if(contains(rings,p)&&(!best||xs[i+1]-xs[i]>best.width))best={p,width:xs[i+1]-xs[i]};}if(best)return{east:best.p[0],north:best.p[1]};}return null;}
  function create(data,local){const iterator=createSteps(data,local);let step;do{step=iterator.next();}while(!step.done);return step.value;}
  function hash(value){let n=2166136261;for(const c of value)n=Math.imul(n^c.charCodeAt(0),16777619);return(n>>>0).toString(16);}
+ const parts=r=>r.parts||[r],polygons=r=>r.polygons||[r.rings],footprints=r=>r.footprints||[{coordinates:r.coordinates,holes:r.holes||[]}];
+ const includes=(r,p)=>polygons(r).some(rings=>contains(rings,p));
+ // Vector-tile quantization can leave sub-metre seams between actual parts.
+ // A real lane, courtyard or vertical separation still splits the selection.
+ const connectionTolerance=.6,verticalTolerance=.35;
+ function pointSegment(p,a,b){const dx=b[0]-a[0],dy=b[1]-a[1],u=Math.max(0,Math.min(1,((p[0]-a[0])*dx+(p[1]-a[1])*dy)/(dx*dx+dy*dy||1)));return Math.hypot(p[0]-a[0]-u*dx,p[1]-a[1]-u*dy);}
+ function boundariesTouch(a,b){
+  for(const ra of a.rings)for(let i=1;i<ra.length;i++)for(const rb of b.rings)for(let j=1;j<rb.length;j++){
+   const p=ra[i-1],q=ra[i],r=rb[j-1],s=rb[j];
+   if(Math.max(p[0],q[0])+connectionTolerance<Math.min(r[0],s[0])||Math.max(r[0],s[0])+connectionTolerance<Math.min(p[0],q[0])||Math.max(p[1],q[1])+connectionTolerance<Math.min(r[1],s[1])||Math.max(r[1],s[1])+connectionTolerance<Math.min(p[1],q[1]))continue;
+   const dx=q[0]-p[0],dy=q[1]-p[1],ex=s[0]-r[0],ey=s[1]-r[1],cross=dx*ey-dy*ex;
+   if(Math.abs(cross)>1e-10){const ax=r[0]-p[0],ay=r[1]-p[1],u=(ax*ey-ay*ex)/cross,v=(ax*dy-ay*dx)/cross;if(u>=0&&u<=1&&v>=0&&v<=1)return true;}
+   if(Math.min(pointSegment(p,r,s),pointSegment(q,r,s),pointSegment(r,p,q),pointSegment(s,p,q))<=connectionTolerance)return true;
+  }
+  return false;
+ }
+ function connected(a,b){
+  if(Math.max(a.connectionMinHeight??a.minHeight??0,b.connectionMinHeight??b.minHeight??0)>Math.min(a.connectionHeight??a.height??0,b.connectionHeight??b.height??0)+verticalTolerance)return false;
+  if(a.rings[0].some(p=>contains(b.rings,p))||b.rings[0].some(p=>contains(a.rings,p)))return true;
+  return boundariesTouch(a,b);
+ }
+ function* connectedSteps(input,geo,landmarks=[]){
+  const unique=new Map();
+  for(const r of input){for(const p of parts(r))if(!unique.has(p.id))unique.set(p.id,p);yield 'building-component-input';}
+  const entries=[...unique.values()].sort((a,b)=>a.id.localeCompare(b.id)),parents=entries.map((_,i)=>i),indices=new Map(entries.map((r,i)=>[r,i]));
+  function find(i){while(i!==parents[i]){parents[i]=parents[parents[i]];i=parents[i];}return i;}
+  const sweep=entries.slice().sort((a,b)=>a.bounds[0]-b.bounds[0]||a.id.localeCompare(b.id));let active=[];
+  for(const r of sweep){
+   active=active.filter(p=>p.bounds[2]+connectionTolerance>=r.bounds[0]);
+   for(const other of active){if(other.bounds[3]+connectionTolerance>=r.bounds[1]&&r.bounds[3]+connectionTolerance>=other.bounds[1]&&find(indices.get(r))!==find(indices.get(other))&&connected(r,other))parents[find(indices.get(r))]=find(indices.get(other));yield 'building-component-contact';}
+   active.push(r);
+  }
+  const groups=new Map();for(const r of entries){const key=find(indices.get(r));if(!groups.has(key))groups.set(key,[]);groups.get(key).push(r);yield 'building-component-members';}
+  const result=[];
+  for(const members of groups.values()){
+   const rank=r=>r.nameSource==='mapped'?3:r.nameSource==='facility'?2:0,ranked=members.slice().sort((a,b)=>rank(b)-rank(a)||Number(b.kind!=='generic')-Number(a.kind!=='generic')||(b.nameBase||b.name).length-(a.nameBase||a.name).length||a.id.localeCompare(b.id)),primary=ranked[0];
+   let name=members.length>1?(primary.nameBase||primary.name):primary.name,nameSource=primary.nameSource;
+   const landmark=rank(primary)===0?landmarks.find(l=>l.osmWay&&l.name&&members.some(r=>{const p=geo.local(l.lon,l.lat);return contains(r.rings,[p.east,p.north]);})):null;
+   if(landmark){name=landmark.name;nameSource='landmark';}
+   if(members.length===1){result.push({...primary,name,nameSource});yield 'building-component-single';continue;}
+   const union=(CityBlocks?.overlay?CityBlocks.overlay('union',...members.map(r=>r.rings)):clipping.union(...members.map(r=>r.rings))).sort((a,b)=>area(b)-area(a)),outline=union.map(rings=>({coordinates:rings[0].map(([x,y])=>{const p=geo.coordinate(x,y);return[p.lon,p.lat];}),holes:rings.slice(1).map(ring=>ring.map(([x,y])=>{const p=geo.coordinate(x,y);return[p.lon,p.lat];}))})),point=anchor(union[0])||primary;
+   const highest=members.reduce((a,b)=>a.height>=b.height?a:b);
+   result.push({...primary,id:members[0].id,name,nameSource,source:landmark?'https://www.openstreetmap.org/way/'+landmark.osmWay:primary.source,parts:members,partCount:members.length,memberIds:members.map(r=>r.id),buildingCount:1,buildingIds:[...new Set(members.flatMap(r=>r.buildingIds))],placeIds:[...new Set(members.flatMap(r=>r.placeIds))],kinds:[...new Set(members.flatMap(r=>r.kinds))],...outline[0],footprints:outline,polygons:union,rings:union[0],bounds:bounds(union.flat()),...point,...geo.coordinate(point.east,point.north),area:Math.round(union.reduce((n,rings)=>n+area(rings),0)),height:highest.height,heightSource:highest.heightSource,minHeight:Math.min(...members.map(r=>r.minHeight||0))});
+   yield 'building-component-union';
+  }
+  return result.sort((a,b)=>a.id.localeCompare(b.id));
+ }
 
  function spatial(){
   const size=240,cells=new Map(),large=new Set();
   function visit(box,fn){const x0=Math.floor(box[0]/size),y0=Math.floor(box[1]/size),x1=Math.floor(box[2]/size),y1=Math.floor(box[3]/size);for(let x=x0;x<=x1;x++)for(let y=y0;y<=y1;y++)fn(x+','+y);}
   function add(r){const b=r.bounds;if((Math.ceil((b[2]-b[0])/size)+1)*(Math.ceil((b[3]-b[1])/size)+1)>4096){large.add(r);return;}visit(b,key=>{if(!cells.has(key))cells.set(key,[]);cells.get(key).push(r);});}
   function near(box){const found=new Set(large);visit(box,key=>{for(const r of cells.get(key)||[])found.add(r);});return[...found].filter(r=>r.bounds[0]<=box[2]&&r.bounds[2]>=box[0]&&r.bounds[1]<=box[3]&&r.bounds[3]>=box[1]);}
-  function at(p,filter='all'){return near([p.east,p.north,p.east,p.north]).filter(r=>LocalPlaces.matches(r,filter)&&contains(r.rings,[p.east,p.north])).sort((a,b)=>(b.height||0)-(a.height||0)||a.area-b.area||a.id.localeCompare(b.id))[0]||null;}
+  function at(p,filter='all'){return near([p.east,p.north,p.east,p.north]).filter(r=>LocalPlaces.matches(r,filter)&&includes(r,[p.east,p.north])).sort((a,b)=>(b.height||0)-(a.height||0)||a.area-b.area||a.id.localeCompare(b.id))[0]||null;}
   return{add,near,at};
  }
  function* createSteps(data,local){
@@ -30,7 +76,8 @@
    const buildingIds=[...new Set([b.id,b.modelId,...(b.sourceIds||[]),...(b.modelAliases||[]).map(id=>id.slice(id.indexOf(':')+1))].filter(id=>id!=null).map(String))];
    const name=b.name||b.tags?.['addr:housename']||(b.facilityName?b.facilityName+' · ':'')+(b.tags?.['addr:street']||'')+(b.tags?.['addr:housenumber']||'')+label;
    const footprintArea=b.modelArea??area(rings)*Math.cos((b.lat??geo.center.lat)*Math.PI/180)/Math.cos(geo.center.lat*Math.PI/180);
-   regions.push({id:'district-building-'+encodeURIComponent(identity),boundarySource:'building',source:b.source,name,kind,kinds:[kind],street:b.tags?.['addr:street']||'',rings,bounds:bounds(rings),...point,...geo.coordinate(point.east,point.north),area:Math.round(footprintArea),coordinates:b.coordinates,holes:b.holes||[],heightSource:b.heightSource,height:kind==='station'?Math.max((b.minHeight||0)+.1,Math.min(b.height,6)):b.height,minHeight:b.minHeight||0,buildingIds,buildingCount:1,placeIds:[]});
+   const originalHeight=parseFloat(b.tags?.height),originalMinimum=parseFloat(b.tags?.min_height);
+   regions.push({id:'district-building-'+encodeURIComponent(identity),boundarySource:'building',source:b.source,name,nameBase:name,nameSource:b.name||b.tags?.['addr:housename']||b.tags?.['addr:housenumber']?'mapped':b.facilityName?'facility':'type',kind,kinds:[kind],street:b.tags?.['addr:street']||'',rings,bounds:bounds(rings),...point,...geo.coordinate(point.east,point.north),area:Math.round(footprintArea),coordinates:b.coordinates,holes:b.holes||[],heightSource:b.heightSource,height:kind==='station'?Math.max((b.minHeight||0)+.1,Math.min(b.height,6)):b.height,minHeight:b.minHeight||0,connectionHeight:b.connectionHeight??(Number.isFinite(originalHeight)?originalHeight:b.height),connectionMinHeight:b.connectionMinHeight??(Number.isFinite(originalMinimum)?originalMinimum:b.minHeight||0),buildingIds,buildingCount:1,placeIds:[]});
    if(!b.name&&b.facilityName){if(!facilityLabels.has(name))facilityLabels.set(name,[]);facilityLabels.get(name).push(regions.at(-1));}
    yield 'district-source-buildings';
   }
@@ -44,23 +91,24 @@
  function* projectSteps(input,geo){
   const regions=[];
   for(const r of input){
-   const rings=[];
-   for(const ring of[r.coordinates,...(r.holes||[])]){const points=[];for(let i=0;i<ring.length;i++){const p=geo.local(...ring[i]);points.push([p.east,p.north]);if(i%64===63)yield 'district-project-points';}rings.push(points);}
-   regions.push({...r,rings,bounds:bounds(rings),...geo.local(r.lon,r.lat)});yield 'district-project-regions';
+   const projected=[];
+   for(const shape of footprints(r)){const rings=[];for(const ring of[shape.coordinates,...(shape.holes||[])]){const points=[];for(let i=0;i<ring.length;i++){const p=geo.local(...ring[i]);points.push([p.east,p.north]);if(i%64===63)yield 'district-project-points';}rings.push(points);}projected.push(rings);}
+   const next={...r,rings:projected[0],bounds:bounds(projected.flat()),...geo.local(r.lon,r.lat)};if(r.parts){next.parts=yield*projectSteps(r.parts,geo);next.polygons=projected;}regions.push(next);yield 'district-project-regions';
   }
   return regions;
  }
  function* restoreSteps(input,local){
   const regions=[],lookup=spatial(),owners=new Map();
   function link(id,r){id=String(id);if(!owners.has(id))owners.set(id,new Set());owners.get(id).add(r);}
-  for(const original of input){const r={...original,buildingIds:[...original.buildingIds],kinds:[...original.kinds],placeIds:[...original.placeIds]};regions.push(r);lookup.add(r);for(const id of r.buildingIds)link(id,r);yield 'district-region-links';}
+  const grouped=yield*connectedSteps(input,local.geo,local.selectionLandmarks||[]);
+  for(const original of grouped){const r={...original,buildingIds:[...original.buildingIds],kinds:[...original.kinds],placeIds:[...original.placeIds]};regions.push(r);lookup.add(r);for(const id of r.buildingIds)link(id,r);yield 'district-region-links';}
   // A simplified/grouped view can refer to several genuine footprints. Link
   // aliases to their original owners without moving any district boundary.
   for(const b of local.buildings){const linked=new Set((b.sourceIds||[b.id]).flatMap(id=>[...(owners.get(String(id))||[])]));if(!linked.size){const r=lookup.at(b);if(r)linked.add(r);}for(const r of linked){if(!r.buildingIds.includes(String(b.id)))r.buildingIds.push(String(b.id));link(b.id,r);}yield 'district-building-links';}
-  const byId=new Map(regions.map(r=>[r.id,r]));
+  const byId=new Map();for(const r of regions)for(const id of[r.id,...(r.memberIds||[])])byId.set(id,r);
   for(const p of local.places){const r=forPlace(p);if(r&&!r.placeIds.includes(String(p.id)))r.placeIds.push(String(p.id));yield 'district-place-links';}
   function at(p,filter='all'){if(!p||!Number.isFinite(p.east)||!Number.isFinite(p.north))return null;return lookup.at(p,filter);}
-  function distanceToRegion(p,r){if(contains(r.rings,[p.east,p.north]))return 0;let best=Infinity;for(const ring of r.rings)for(let i=1;i<ring.length;i++){const a=ring[i-1],b=ring[i],dx=b[0]-a[0],dy=b[1]-a[1],u=Math.max(0,Math.min(1,((p.east-a[0])*dx+(p.north-a[1])*dy)/(dx*dx+dy*dy||1)));best=Math.min(best,Math.hypot(p.east-a[0]-u*dx,p.north-a[1]-u*dy));}return best;}
+  function distanceToRegion(p,r){if(includes(r,[p.east,p.north]))return 0;let best=Infinity;for(const ring of polygons(r).flat())for(let i=1;i<ring.length;i++){const a=ring[i-1],b=ring[i],dx=b[0]-a[0],dy=b[1]-a[1],u=Math.max(0,Math.min(1,((p.east-a[0])*dx+(p.north-a[1])*dy)/(dx*dx+dy*dy||1)));best=Math.min(best,Math.hypot(p.east-a[0]-u*dx,p.north-a[1]-u*dy));}return best;}
   function forPlace(p){
    if(!p||!Number.isFinite(p.east)||!Number.isFinite(p.north))return null;
    if(p.districtId&&byId.has(p.districtId))return byId.get(p.districtId);if(byId.has(p.id))return byId.get(p.id);
@@ -78,21 +126,24 @@
    const ox=o.x,oy=-o.z,dx=d.x,dy=-d.z,box=[Math.min(ox+dx*low,ox+dx*high),Math.min(oy+dy*low,oy+dy*high),Math.max(ox+dx*low,ox+dx*high),Math.max(oy+dy*low,oy+dy*high)];
    let found=null,nearest=Infinity;
    for(const r of lookup.near(box)){
-    if(!LocalPlaces.matches(r,filter)||visibleIds&&!r.buildingIds.some(id=>visibleIds.has(id)))continue;
-    const top=(r.height||0)+1.3,bottom=(r.minHeight||0)+1,t=(top-o.y)/d.y;let distance=t>=0&&contains(r.rings,[ox+dx*t,oy+dy*t])?t:Infinity;
-    for(const ring of r.rings)for(let i=1;i<ring.length;i++){
+    if(!LocalPlaces.matches(r,filter))continue;
+    for(const part of parts(r)){
+    if(visibleIds&&!part.buildingIds.some(id=>visibleIds.has(id)))continue;
+    const top=(part.height||0)+1.3,bottom=(part.minHeight||0)+1,t=(top-o.y)/d.y;let distance=t>=0&&contains(part.rings,[ox+dx*t,oy+dy*t])?t:Infinity;
+    for(const ring of part.rings)for(let i=1;i<ring.length;i++){
      const a=ring[i-1],b=ring[i],ex=b[0]-a[0],ey=b[1]-a[1],cross=dx*ey-dy*ex;if(Math.abs(cross)<1e-9)continue;
      const ax=a[0]-ox,ay=a[1]-oy,u=(ax*ey-ay*ex)/cross,v=(ax*dy-ay*dx)/cross,y=o.y+d.y*u;
      if(u>=0&&v>=0&&v<=1&&y>=bottom&&y<=top)distance=Math.min(distance,u);
     }
     if(distance<nearest){nearest=distance;found=r;}
+    }
    }
    return found;
   }
   return{regions,byId,at,forPlace,raycast,size:null,source:'mapped-building-footprints'};
  }
 
- return{create,createSteps,restore,restoreSteps,projectSteps,contains,anchor};
+ return{create,createSteps,restore,restoreSteps,projectSteps,contains,anchor,parts,footprints,polygons};
 });
 // Road-delimited blocks use sparse silhouettes; landmarks retain their mapped footprints.
 function districtDrain(iterator){let step;do{step=iterator.next();}while(!step.done);return step.value;}
@@ -379,37 +430,45 @@ function* buildDistrictScene(data,localPlaces,onSelect,options={}){
  function updateSelectedBody(region){
   selectedBody.visible=!!region&&buildingsVisible&&!options.baseOnly&&CoopLocalPlaces.matches(region,filter);
   if(!region){clearSelectedBody();return;}if(!selectedBody.visible)return;
-  const style=options.districtStyle?.(region)||{},bottom=(region.minHeight||0)+1,top=(region.height||0)+1.3;
-  if(!selectedBodyShape||selectedBodyShape.id!==region.id||selectedBodyShape.coordinates!==region.coordinates||selectedBodyShape.holes!==region.holes||selectedBodyShape.bottom!==bottom||selectedBodyShape.top!==top){
+  const style=options.districtStyle?.(region)||{},shapes=CoopDistrictSelection.parts(region).map(part=>({part,coordinates:part.coordinates,holes:part.holes,bottom:(part.minHeight||0)+1,top:(part.height||0)+1.3}));
+  if(!selectedBodyShape||selectedBodyShape.id!==region.id||selectedBodyShape.shapes.length!==shapes.length||shapes.some((p,i)=>{const old=selectedBodyShape.shapes[i];return old.coordinates!==p.coordinates||old.holes!==p.holes||old.bottom!==p.bottom||old.top!==p.top;})){
    clearSelectedBody();
    // Use the same walls, courtyard holes and vertical range as the live model.
    // Depth testing keeps the tint on this building's visible facades only.
-   const geometry=ownGeometry(districtWallGeometry(geo,region.coordinates,Math.max(.1,top-bottom),region.holes));geometry.translate(0,bottom,0);
+   for(const {part,coordinates,holes,bottom,top}of shapes){
+   const geometry=ownGeometry(districtWallGeometry(geo,coordinates,Math.max(.1,top-bottom),holes));geometry.translate(0,bottom,0);
    const fill=new THREE.Mesh(geometry,ownMaterial(new THREE.MeshBasicMaterial({transparent:true,opacity:.35,depthTest:true,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2})));
    fill.userData.selectedBuildingBody=region.id;fill.renderOrder=3;selectedBody.add(fill);
    const outline=new THREE.LineSegments(ownGeometry(new THREE.EdgesGeometry(geometry,25)),ownMaterial(new THREE.LineBasicMaterial({transparent:true,opacity:.85,depthTest:true,depthWrite:false})));
    outline.userData.selectedBuildingOutline=region.id;outline.renderOrder=7;selectedBody.add(outline);
-   selectedBodyShape={id:region.id,coordinates:region.coordinates,holes:region.holes,bottom,top};
+   const roofGeometry=polygon(coordinates,0,holes);roofGeometry.translate(0,top+.3,0);const roof=new THREE.Mesh(roofGeometry,ownMaterial(new THREE.MeshBasicMaterial({transparent:true,opacity:.3,side:THREE.DoubleSide,depthTest:true,depthWrite:false})));
+   roof.userData.selectedBuildingRoof=region.id;roof.renderOrder=3;selectedBody.add(roof);
+   }
+   selectedBodyShape={id:region.id,shapes};
   }
-  selectedBody.children[0].material.color.set(style.selectedColor||'#ff9f1c');selectedBody.children[1].material.color.set(style.selectedStrokeColor||'#c65300');
+  for(const mesh of selectedBody.children)mesh.material.color.set(mesh.userData.selectedBuildingOutline?(style.selectedStrokeColor||'#c65300'):(style.selectedColor||'#ff9f1c'));
+ }
+ function selectionFootprintGeometry(region){
+  const shapes=CoopDistrictSelection.polygons(region).map(rings=>{const shape=new THREE.Shape();rings[0].forEach(([x,y],i)=>i?shape.lineTo(x,y):shape.moveTo(x,y));for(const ring of rings.slice(1)){const hole=new THREE.Path();ring.forEach(([x,y],i)=>i?hole.lineTo(x,y):hole.moveTo(x,y));shape.holes.push(hole);}return shape;});
+  const geometry=ownGeometry(new THREE.ShapeGeometry(shapes));geometry.rotateX(-Math.PI/2);return geometry;
  }
  const districtBoundaryMaterial=options.districtSelection&&!districtStyled?ownMaterial(new THREE.LineBasicMaterial({color:0xffedce,transparent:true,opacity:.42,depthTest:false,depthWrite:false})):null;
  const districtBoundaryEntries=[];
  if(options.districtSelection){if(!(options.streamMap&&districtStyled))for(const r of options.districtSelection.regions){
   let visual=null,boundaryMaterial=districtBoundaryMaterial;
-  if(districtStyled){yield 'district-region-fills';const geometry=polygon(r.coordinates,0,r.holes);yield*districtSphere(geometry);const fill=new THREE.Mesh(geometry,ownMaterial(new THREE.MeshBasicMaterial({transparent:true,opacity:.1,side:THREE.DoubleSide,depthTest:false,depthWrite:false})));fill.userData.districtFill=r.id;fill.renderOrder=1;districtBoundaries.add(fill);boundaryMaterial=ownMaterial(new THREE.LineBasicMaterial({transparent:true,opacity:.42,depthTest:false,depthWrite:false}));visual={region:r,fill,lines:[]};districtVisuals.set(r.id,visual);}
-  for(const ring of r.rings){yield 'district-boundaries';const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints(ring.map(([x,y])=>new THREE.Vector3(x,0,-y))),boundaryMaterial);line.position.y=selectionHeight(r)+1.8;line.renderOrder=2;districtBoundaries.add(line);districtBoundaryEntries.push({line,region:r});if(visual){line.userData.districtBoundary=r.id;visual.lines.push(line);}}
+  if(districtStyled){yield 'district-region-fills';const geometry=selectionFootprintGeometry(r);yield*districtSphere(geometry);const fill=new THREE.Mesh(geometry,ownMaterial(new THREE.MeshBasicMaterial({transparent:true,opacity:.1,side:THREE.DoubleSide,depthTest:false,depthWrite:false})));fill.userData.districtFill=r.id;fill.renderOrder=1;districtBoundaries.add(fill);boundaryMaterial=ownMaterial(new THREE.LineBasicMaterial({transparent:true,opacity:.42,depthTest:false,depthWrite:false}));visual={region:r,fill,lines:[]};districtVisuals.set(r.id,visual);}
+  for(const ring of CoopDistrictSelection.polygons(r).flat()){yield 'district-boundaries';const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints(ring.map(([x,y])=>new THREE.Vector3(x,0,-y))),boundaryMaterial);line.position.y=selectionHeight(r)+1.8;line.renderOrder=2;districtBoundaries.add(line);districtBoundaryEntries.push({line,region:r});if(visual){line.userData.districtBoundary=r.id;visual.lines.push(line);}}
  }root.dataset.districtSelection=String(options.districtSelection.regions.length);}
  function updateDistrictStyles(){
   if(!districtStyled)return;const selectedRegion=options.districtSelection?.forPlace(selected);
   updateSelectedBody(selectedRegion);
-  if(options.streamMap&&(!selectedRegion||!districtVisuals.has(selectedRegion.id))){
+  if(options.streamMap&&(!selectedRegion||districtVisuals.get(selectedRegion.id)?.region!==selectedRegion)){
    for(const visual of districtVisuals.values())for(const mesh of [visual.fill,...visual.lines]){districtBoundaries.remove(mesh);mesh.geometry.dispose();ownedGeometries.delete(mesh.geometry);mesh.material.dispose();ownedMaterials.delete(mesh.material);}districtVisuals.clear();
-   if(selectedRegion){const r=selectedRegion,geometry=polygon(r.coordinates,0,r.holes);const fill=new THREE.Mesh(geometry,ownMaterial(new THREE.MeshBasicMaterial({transparent:true,opacity:.3,side:THREE.DoubleSide,depthTest:false,depthWrite:false})));districtBoundaries.add(fill);const lines=r.rings.map(ring=>{const line=new THREE.Line(ownGeometry(new THREE.BufferGeometry().setFromPoints(ring.map(([x,y])=>new THREE.Vector3(x,0,-y)))),ownMaterial(new THREE.LineBasicMaterial({transparent:true,opacity:1,depthTest:false,depthWrite:false})));districtBoundaries.add(line);return line;});districtVisuals.set(r.id,{region:r,fill,lines});}
+   if(selectedRegion){const r=selectedRegion,geometry=selectionFootprintGeometry(r);const fill=new THREE.Mesh(geometry,ownMaterial(new THREE.MeshBasicMaterial({transparent:true,opacity:.3,side:THREE.DoubleSide,depthTest:false,depthWrite:false})));districtBoundaries.add(fill);const lines=CoopDistrictSelection.polygons(r).flat().map(ring=>{const line=new THREE.Line(ownGeometry(new THREE.BufferGeometry().setFromPoints(ring.map(([x,y])=>new THREE.Vector3(x,0,-y)))),ownMaterial(new THREE.LineBasicMaterial({transparent:true,opacity:1,depthTest:false,depthWrite:false})));districtBoundaries.add(line);return line;});districtVisuals.set(r.id,{region:r,fill,lines});}
   }
   for(const visual of districtVisuals.values()){const r=visual.region,style=options.districtStyle(r)||{},visible=CoopLocalPlaces.matches(r,filter),chosen=visible&&selectedRegion?.id===r.id,color=chosen?(style.selectedColor||'#ff9f1c'):(style.color||'#ffedce'),opacity=chosen?(style.selectedOpacity??.3):(style.fillOpacity??.1);
-   visual.fill.visible=visible;visual.fill.position.y=selectionHeight(r)+1.6;visual.fill.material.color.set(color);visual.fill.material.opacity=opacity;visual.fill.material.depthTest=chosen;visual.fill.renderOrder=chosen?3:1;
-   for(const line of visual.lines){line.visible=visible;line.position.y=selectionHeight(r)+1.8;line.material.color.set(chosen?(style.selectedStrokeColor||'#c65300'):color);line.material.opacity=chosen?1:.42;line.renderOrder=chosen?7:2;}
+   const flat=visible&&!(chosen&&selectedBody.visible);visual.fill.visible=flat;visual.fill.position.y=selectionHeight(r)+1.6;visual.fill.material.color.set(color);visual.fill.material.opacity=opacity;visual.fill.material.depthTest=chosen;visual.fill.renderOrder=chosen?3:1;
+   for(const line of visual.lines){line.visible=flat;line.position.y=selectionHeight(r)+1.8;line.material.color.set(chosen?(style.selectedStrokeColor||'#c65300'):color);line.material.opacity=chosen?1:.42;line.renderOrder=chosen?7:2;}
   }
  }
  // Optional device position on the map.
@@ -423,7 +482,7 @@ function* buildDistrictScene(data,localPlaces,onSelect,options={}){
  function highlight(){
   if(districtStyled&&options.districtSelection){updateDistrictStyles();labelsDirty=true;dirty=true;return;}
   updateSelectedBody(options.districtSelection?.forPlace(selected));
-  if(options.districtSelection){const region=options.districtSelection.forPlace(selected);if(region===highlightedDistrict){selection.visible=!!region&&CoopLocalPlaces.matches(region,filter);labelsDirty=true;dirty=true;return;}}
+  if(options.districtSelection){const region=options.districtSelection.forPlace(selected);if(region===highlightedDistrict){selection.visible=!!region&&CoopLocalPlaces.matches(region,filter)&&!selectedBody.visible;labelsDirty=true;dirty=true;return;}}
   return districtDrain(highlightSteps());
  }
  function* highlightSteps(){
@@ -431,7 +490,7 @@ function* buildDistrictScene(data,localPlaces,onSelect,options={}){
   updateSelectedBody(options.districtSelection?.forPlace(selected));
   while(selection.children.length){const child=selection.children[0];child.geometry.dispose();ownedGeometries.delete(child.geometry);child.material.dispose();selection.remove(child);}
   if(!selected){highlightedDistrict=undefined;return;}
-  if(options.districtSelection){const region=options.districtSelection.forPlace(selected);highlightedDistrict=region;selection.visible=!!region&&CoopLocalPlaces.matches(region,filter);if(region){const g=polygon(region.coordinates,0,region.holes);g.translate(0,selectionHeight(region)+1.6,0);const fill=new THREE.Mesh(g,new THREE.MeshBasicMaterial({color:0xff9f1c,transparent:true,opacity:.3,side:THREE.DoubleSide,depthTest:false,depthWrite:false}));fill.renderOrder=3;selection.add(fill);for(const ring of region.rings){const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints(ring.map(([x,y])=>new THREE.Vector3(x,selectionHeight(region)+1.8,-y))),new THREE.LineBasicMaterial({color:0xc65300,depthTest:false,depthWrite:false}));line.renderOrder=7;selection.add(line);}}labelsDirty=true;dirty=true;return;}
+  if(options.districtSelection){const region=options.districtSelection.forPlace(selected);highlightedDistrict=region;selection.visible=!!region&&CoopLocalPlaces.matches(region,filter)&&!selectedBody.visible;if(region&&!selectedBody.visible){const g=selectionFootprintGeometry(region);g.translate(0,selectionHeight(region)+1.6,0);const fill=new THREE.Mesh(g,new THREE.MeshBasicMaterial({color:0xff9f1c,transparent:true,opacity:.3,side:THREE.DoubleSide,depthTest:false,depthWrite:false}));fill.renderOrder=3;selection.add(fill);for(const ring of region.rings){const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints(ring.map(([x,y])=>new THREE.Vector3(x,selectionHeight(region)+1.8,-y))),new THREE.LineBasicMaterial({color:0xc65300,depthTest:false,depthWrite:false}));line.renderOrder=7;selection.add(line);}}labelsDirty=true;dirty=true;return;}
   const ids=selected.buildingIds||[selected.id];
   const selectedSources=new Set(ids.flatMap(id=>{const parent=localPlaces.buildings.find(b=>b.id===id);return parent?.sourceIds||[id];}));
   const highlighted=art?buildings.filter(b=>(b.sourceIds||[b.id]).some(id=>selectedSources.has(id))):buildings.filter(b=>ids.includes(b.id));

@@ -6,7 +6,7 @@ const signature=b=>({id:b.modelId,shape:b.shapeKey,height:b.height,minHeight:b.m
 
 test('initial and streamed models retain each source body height instead of extruding an overlap union to the highest roof',()=>{
  const data=fixture([[1,0,0,80,60,8],[2,5,0,25,25,64,{min_height:'8'}]]),before=JSON.stringify(data),initial=Places.create(data),detail=Places.create(data,{detail:true});
- assert.equal(detail.buildings.length,2,'detailed maps keep each building body independently selectable');assert.deepEqual(detail.buildings.map(b=>b.height),[8,64]);
+ assert.equal(detail.buildings.length,2,'detailed maps keep separate meshes for the connected parts');assert.deepEqual(detail.buildings.map(b=>b.height),[8,64]);
  for(const local of[initial,detail]){assert.equal(local.sourceBuildings.length,2);assert.deepEqual(local.sourceBuildings.map(b=>[b.id,b.height,b.minHeight]),[[1,8,0],[2,64,8]]);}
  assert.equal(JSON.stringify(data),before);
 });
