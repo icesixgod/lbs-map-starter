@@ -199,7 +199,10 @@ function createVectorMapSource(options={}){
    tiles.sort((a,b)=>score(a)-score(b));
    const template=source.tiles[0],results=new Array(tiles.length),publishedFeatures=new Set(),publishedPlaces=new Set();let cursor=0,total=0,loaded=0,cacheHits=0;
    function publish(){
-    if(!onData||baseOnly||loaded===tiles.length||loaded>8&&loaded%4!==0)return;
+    // Emit the first tiles immediately, then double the decoded batch size.
+    // Re-decoding the growing reserve every four tiles becomes quadratic in
+    // dense cities and can exhaust a hosted Worker's CPU budget.
+    if(!onData||baseOnly||loaded===tiles.length||(loaded&(loaded-1))!==0)return;
     const data=decodeVectorTiles(results.filter(Boolean),point,meters,{buildingsOnly:true,metadata:source});
     data.features=data.features.filter(f=>f.kind==='building'&&f.geometryComplete&&!publishedFeatures.has(f.id));
     data.places=data.places.filter(p=>!publishedPlaces.has(p.id));

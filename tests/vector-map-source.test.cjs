@@ -125,6 +125,17 @@ test('cold downloads start at the camera and publish complete buildings before t
  const published=frames.flatMap(f=>f.features.map(b=>b.id));assert.equal(new Set(published).size,published.length,'complete models are only sent once before the final window');
 });
 
+test('progressive decoding stays within a linear tile-work budget as the reserve grows',async t=>{
+ const frames=[],body=encode({building:[{id:99,type:3,properties:{render_height:18},geometry:[[[1900,1900],[2100,1900],[2100,2100],[1900,2100],[1900,1900]]]}]}),source=createVectorMapSource({vectorEndpoint,fetchMap:async url=>url===vectorEndpoint?new Response(JSON.stringify(metadata)):new Response(body)});t.after(()=>source.close());
+ const full=await source.load(point,6000,{onData:data=>frames.push(data)}),reference=await source.load(point,6000);
+ assert.ok(full.delivery.totalTiles>=32,'exercise a wide reserve rather than a single tile');
+ assert.equal(frames[0].delivery.tiles,1,'the nearest buildings still stream immediately');
+ const tileWork=frames.reduce((sum,data)=>sum+data.delivery.tiles,full.delivery.totalTiles);
+ assert.ok(tileWork<=3*full.delivery.totalTiles,'partial frames must not repeatedly decode the whole growing window');
+ assert.deepEqual(full.features,reference.features,'batching must retain the complete final map');
+ const published=frames.flatMap(data=>data.features.map(f=>f.id));assert.equal(new Set(published).size,published.length);
+});
+
 test('shared downloaded tiles still yield to socket delivery before an entire progressive window finishes',async()=>{
  const body=encode({building:[{id:99,type:3,properties:{render_height:18},geometry:[[[1900,1900],[2100,1900],[2100,2100],[1900,2100],[1900,1900]]]}]}),source=createVectorMapSource({vectorEndpoint,fetchMap:async url=>url===vectorEndpoint?new Response(JSON.stringify(metadata)):new Response(body)});
  await source.load(point,2000);let done=false,first,delivered;const observed=new Promise(resolve=>{delivered=resolve;});

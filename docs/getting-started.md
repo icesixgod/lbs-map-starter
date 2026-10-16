@@ -68,9 +68,15 @@ npm run build
 
 `dist/` 是构建产物，不需要提交到源码仓库。分享单文件演示时可以单独分发生成的 HTML，其中已保留许可文本和页面署名。
 
+### 完整版在线演示
+
+[打开完整演示](https://lbs-map-starter.aileetcode.com)。站点托管于 Sites，包含在线 `/api/map` 接口，可探索其他坐标并按视野补载道路和建筑，保留 2D/3D、建筑交互与 GPS 入口。GPS 需要浏览器和设备授权。
+
+地图接口沿用相同的数据解析和流式加载逻辑，适配 Workers 的请求与响应；服务端不使用磁盘缓存。
+
 ### 发布静态展示
 
-[在线演示](https://icesixgod.github.io/lbs-map-starter/) 托管于 GitHub Pages，只展示内置上海街区，保留 2D/3D、缩放、建筑选择、搜索与筛选；不请求地图 API 或设备定位。
+[街区预览](https://icesixgod.github.io/lbs-map-starter/) 托管于 GitHub Pages，只展示内置上海街区，保留 2D/3D、缩放、建筑选择、搜索与筛选；不请求地图 API 或设备定位。
 
 ```sh
 npm run build:demo

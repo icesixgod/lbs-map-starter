@@ -1,14 +1,14 @@
 # LBS Map Starter
 
-[在线演示](https://icesixgod.github.io/lbs-map-starter/) · [English](README.en.md)
+[完整演示](https://lbs-map-starter.aileetcode.com) · [街区预览](https://icesixgod.github.io/lbs-map-starter/) · [English](README.en.md)
 
 基于 **Three.js + OpenStreetMap** 的 LBS 地图基础项目，适合街区探索、位置游戏与建筑交互原型。
 
-[![上海街区 3D 地图与建筑交互效果](docs/images/map-preview.jpg)](https://icesixgod.github.io/lbs-map-starter/)
+[![上海街区 3D 地图与建筑交互效果](docs/images/map-preview.jpg)](https://lbs-map-starter.aileetcode.com)
 
 - 2D/3D 切换、平移、缩放，内置上海陆家嘴街区。
 - 单栋建筑点选、高亮、搜索筛选，以及高度、占地面积和坐标详情。
-- 本地运行支持在线地图补载、坐标探索与 GPS 定位。
+- 在线地图补载、坐标探索与可选 GPS 定位。
 
 ## 启动
 
@@ -20,7 +20,7 @@ cd lbs-map-starter
 npm start
 ```
 
-打开 [http://localhost:8789](http://localhost:8789/)。在线演示仅覆盖内置街区；探索其他区域请本地运行。
+打开 [http://localhost:8789](http://localhost:8789/)。完整演示支持在线探索；街区预览仅展示内置区域。GPS 需要设备授权。
 
 ## 开发
 
