@@ -4,6 +4,8 @@
 
 A **Three.js + OpenStreetMap** starter for location-based games, neighborhood exploration and building interaction.
 
+[![Shanghai 3D map and building interaction preview](docs/images/map-preview.jpg)](https://icesixgod.github.io/lbs-map-starter/)
+
 - Pan, zoom and switch between 2D/3D, with a bundled Shanghai neighborhood.
 - Select and highlight individual buildings; search, filter and inspect height, footprint area and coordinates.
 - Run locally for streamed map loading, coordinate exploration and optional GPS positioning.
@@ -18,7 +20,7 @@ cd lbs-map-starter
 npm start
 ```
 
-Open **http://localhost:8789**. The hosted demo covers the bundled area; run locally to explore other locations. The application UI is currently in Chinese.
+Open [http://localhost:8789](http://localhost:8789/). The hosted demo covers the bundled area; run locally to explore other locations. The application UI is currently in Chinese.
 
 ## Develop
 
