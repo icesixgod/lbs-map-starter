@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#272c28">
+<meta name="description" content="LBS Map Starter：基于 Three.js 与 OpenStreetMap 的开源街区地图，支持 2D/3D 浏览与单栋建筑交互。">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='%23ee964f' d='M16 2 30 16 16 30 2 16z'/%3E%3C/svg%3E">
+<title>LBS Map Starter · 街区地图</title><!-- LBS_BOOTSTRAP --><!-- LBS_STYLES -->
+</head>
+<body>
+<main id="lbs-app">
+ <header class="topbar">
+  <div class="brand"><strong>LBS Map</strong><span id="project-caption">地图 Starter</span></div>
+  <div class="district-brand"><h1 id="district-title">默认街区</h1><span id="building-count">正在载入建筑…</span></div>
+  <div class="map-tools" role="group" aria-label="地图工具"><button id="building-list-toggle" aria-controls="building-browser" aria-expanded="false">建筑列表</button><button id="view-toggle" aria-pressed="false">2D 地图</button><button id="region-button">探索坐标</button><a id="project-source" class="source-link" href="https://github.com/icesixgod/lbs-map-starter" target="_blank" rel="noopener" hidden>GitHub ↗</a></div>
+ </header>
+ <section class="map-stage" aria-label="街区地图与建筑选择">
+  <div id="lbs-scene-root"><div id="district-map">
+   <canvas id="district-canvas" aria-label="拖动平移、滚轮缩放，点击单栋建筑选择"></canvas>
+   <svg id="map-2d" viewBox="-1700 -1700 3400 3400" aria-label="街区平面地图，选择建筑后按回车查看详情" hidden></svg>
+   <div id="map-markers"><button id="building-marker" class="place-marker" data-place-marker="selected" aria-label="查看已选建筑" hidden></button></div>
+   <div id="player-marker" role="img" aria-label="设备位置" hidden><i></i></div>
+  </div></div>
+  <div class="map-filter" role="group" aria-label="建筑类型筛选"><button data-filter="all" class="selected" aria-pressed="true">全部建筑</button><button data-filter="residence" aria-pressed="false">住宅</button><button data-filter="mall" aria-pressed="false">商业</button><button data-filter="hospital" aria-pressed="false">医疗</button><button data-filter="school" aria-pressed="false">学校</button></div>
+  <div class="map-hint" id="map-hint">拖动浏览 · 滚轮缩放 · 点击建筑查看详情</div>
+  <aside id="building-browser" class="map-panel building-browser" aria-label="建筑列表" hidden>
+   <div class="panel-heading"><div><small>BUILDINGS</small><h2>建筑列表</h2></div><button id="building-list-close" class="close" aria-label="关闭建筑列表">×</button></div>
+   <label class="search-label" for="building-search">查找建筑</label><input id="building-search" type="search" placeholder="输入建筑名称或类型" autocomplete="off">
+   <p id="building-list-status" class="muted" role="status"></p><div id="building-list" class="building-list"></div>
+   <div class="list-pagination"><button id="building-prev">上一页</button><span id="building-page"></span><button id="building-next">下一页</button></div>
+  </aside>
+  <aside id="building-inspector" class="map-panel building-inspector" aria-label="已选建筑详情" hidden>
+   <div class="panel-heading"><div><small>SELECTED BUILDING</small><h2 id="building-name">选择建筑</h2></div><button id="building-close" class="close" aria-label="取消建筑选择">×</button></div>
+   <p id="building-kind" class="building-kind"></p>
+   <dl class="building-metrics"><div><dt>建筑高度</dt><dd id="building-height">—</dd></div><div><dt>占地面积</dt><dd id="building-area">—</dd></div></dl>
+   <p id="building-height-note" class="muted"></p>
+   <dl class="building-location"><div><dt>纬度</dt><dd id="building-lat">—</dd></div><div><dt>经度</dt><dd id="building-lon">—</dd></div></dl>
+   <p id="building-street" class="muted" hidden></p>
+   <div class="building-actions"><button id="focus-building" class="primary">居中查看</button><a id="building-source" target="_blank" rel="noopener" hidden>地图来源 ↗</a></div>
+  </aside>
+  <div class="map-bottom"><div class="zoom-controls" role="group" aria-label="地图缩放"><button id="zoom-out" aria-label="缩小地图">−</button><button id="zoom-in" aria-label="放大地图">+</button></div><button id="recenter">地图归位</button><button id="gps-button"><span>启用 GPS</span></button></div>
+  <div class="location-card"><strong id="location-title">默认街区</strong><small id="location-detail">WGS84 · 未使用设备定位</small><span id="location-signal">MAP</span></div>
+  <div class="map-compass" aria-hidden="true"><span>N</span><i>↑</i></div>
+  <div class="map-scale" aria-hidden="true"><span id="map-scale-label">200 m</span><i id="map-scale-line"></i></div>
+  <div id="map-status" class="map-status" role="status">正在载入地图与建筑…</div>
+  <div class="map-attribution"><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a> · <a href="https://openmaptiles.org/" target="_blank" rel="noopener">© OpenMapTiles</a> · <a href="https://openfreemap.org/" target="_blank" rel="noopener">OpenFreeMap</a></div>
+  <div id="map-load-state" class="map-load-state" role="status" hidden><span id="map-load-text"></span><button id="retry-map" hidden>重试地图</button></div>
+ </section>
+</main>
+<div id="toast" class="toast" role="status" hidden></div>
+<div id="sheet" class="sheet" hidden><section class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="sheet-title"><header><h2 id="sheet-title">探索坐标</h2><button id="sheet-close" class="close" aria-label="关闭坐标面板">×</button></header><div id="sheet-body"></div><footer id="sheet-actions"></footer></section></div>
+<!-- LBS_ENGINE -->
+</body></html>

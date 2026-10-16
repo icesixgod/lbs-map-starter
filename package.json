@@ -1,0 +1,27 @@
+{
+  "name": "lbs-map-starter",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A runnable LBS map starter with real-world 2D/3D maps, streamed buildings and building interaction.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/icesixgod/lbs-map-starter.git"
+  },
+  "homepage": "https://icesixgod.github.io/lbs-map-starter/",
+  "bugs": {
+    "url": "https://github.com/icesixgod/lbs-map-starter/issues"
+  },
+  "scripts": {
+    "build": "node scripts/build.cjs",
+    "build:demo": "node scripts/build.cjs --demo",
+    "prestart": "npm run build",
+    "start": "node scripts/serve.cjs",
+    "test": "node --test tests/*.test.cjs",
+    "check": "node scripts/check-build.cjs",
+    "verify": "npm run build && npm test && npm run check"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

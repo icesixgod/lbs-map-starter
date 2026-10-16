@@ -1,0 +1,31 @@
+# Generated application and runtime map caches.
+/dist/
+/.cache/
+/data/
+/outputs/
+/work/
+/sites/
+/releases/
+
+# Dependencies, local configuration and editor files.
+node_modules/
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
+*.tsbuildinfo
+
+# Local recordings, reports, archives and test screenshots.
+/screenshots/
+/test-results/
+/playwright-report/
+/coverage/
+*.zip
+*.tgz
+*.tar.gz
+*.mp4
+*.webm

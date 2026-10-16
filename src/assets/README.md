@@ -1,0 +1,13 @@
+# Bundled assets
+
+| File | Purpose | Source / license |
+| --- | --- | --- |
+| `default-map.json` | Starting map around Shanghai's Oriental Pearl Tower | OpenStreetMap contributors, served through OpenFreeMap / OpenMapTiles; ODbL |
+| `district-water-surfaces.json` | Supplementary OSM river geometry used when a source window lacks a complete water surface | OpenStreetMap relation 8227206; ODbL |
+| `city-material-atlas-v1.png` | Example material atlas for stylized walls, roofs and ground | Project sample asset distributed under the root MIT license; not OSM map data or real-world facade photography |
+
+Map files retain their `source` metadata, including source links, attribution and retrieval information where available. They are distributed as sample data, not as runtime download caches.
+
+The regression map is kept separately in `tests/fixtures/binjiang-map.json`. The runtime build only embeds `default-map.json` and the material atlas; it does not embed the regression map.
+
+To refresh or replace the starting map, run `node scripts/fetch-map.cjs LAT LON src/assets/default-map.json`, then rebuild. Keep the resulting source metadata and visible attribution.
