@@ -6,19 +6,28 @@ function named(point={lat:30,lon:120}){
  const geometry=[[0,0],[.0001,0],[.0001,.0001],[0,.0001],[0,0]].map(([x,y])=>({lon:point.lon+x,lat:point.lat+y})),data=Generator.normalize({elements:[{type:'way',id:1,tags:{building:'hospital',height:'32',min_height:'4'},geometry}]},point);
  data.name=original;data.center.name=original;data.center.address=original;
  const labels={name:original,'name:zh':original,'name:en':original,alt_name:original,official_name:original,short_name:original,'addr:housename':original,'addr:province':original,'addr:full':original,brand:original,operator:original,description:original,wikipedia:original,'contact:website':original};
- Object.assign(data.features[0],{name:original,shortName:original,facilityName:original,address:original,street:original,description:original});Object.assign(data.features[0].tags,labels);
+ Object.assign(data.features[0],{name:original,shortName:original,facilityName:original,address:original,street:original,description:original});Object.assign(data.features[0].tags,labels,{surface:'asphalt',width:'12'});
  data.places=[{id:'way/1',name:original,shortName:original,lon:point.lon,lat:point.lat,coordinates:data.features[0].coordinates,holes:[],tags:{amenity:'hospital',...labels}}];
  data.gameNodes=[{id:'place-1',placeId:'way/1',name:original,address:original,...point}];return data;
 }
 function anonymous(data){
  assert.doesNotMatch(JSON.stringify(data),new RegExp(original));
- for(const key of ['features','places','gameNodes'])for(const item of data[key]||[]){for(const field of Object.keys(item))assert.equal(forbidden.test(field),false,field);for(const field of Object.keys(item.tags||{}))assert.equal(forbidden.test(field),false,field);}
+ for(const key of ['features','places','gameNodes'])for(const item of data[key]||[]){for(const field of Object.keys(item))assert.equal(forbidden.test(field),false,field);for(const field of Object.keys(item.tags||{})){assert.equal(forbidden.test(field),false,field);assert.doesNotMatch(field,/^(surface|width|maxheight|maxwidth|maxweight|depth|capacity)$/);}}
  for(const field of Object.keys(data.center||{}))assert.equal(forbidden.test(field),false,field);
 }
 
 test('data policy removes names, translations, aliases, addresses and descriptive POI tags without changing geometry or attribution',()=>{
  const input=named(),before=JSON.stringify(input),clean=Policy.cleanMap(input);anonymous(clean);assert.equal(JSON.stringify(input),before);assert.deepEqual(clean.features[0].coordinates,input.features[0].coordinates);assert.deepEqual(clean.features[0].tags,{building:'hospital',height:'32',min_height:'4'});assert.equal(clean.features[0].id,1);assert.equal(clean.source.name,'OpenStreetMap contributors');assert.equal(clean.places[0].tags.amenity,'hospital');assert.equal(clean.gameNodes[0].placeId,'way/1');assert.deepEqual(Policy.cleanMap(clean),clean);
  const raw=Policy.cleanRaw({elements:[{type:'relation',id:2,tags:{type:'multipolygon',natural:'water',name:original},members:[{type:'way',ref:3,role:'outer',geometry:[],tags:{alt_name:original}}]}]});assert.doesNotMatch(JSON.stringify(raw),new RegExp(original));assert.equal(raw.elements[0].members[0].ref,3);
+});
+
+test('road and water dimensions and materials are removed while actual building volumes survive',()=>{
+ const road={highway:'primary',surface:'asphalt',width:'28',height:'12',min_height:'4',maxheight:'4.5',maxweight:'20'};
+ assert.deepEqual(Policy.tags(road),{highway:'primary'});
+ assert.deepEqual(Policy.tags({natural:'water',height:'45',depth:'12',capacity:'60000'}),{natural:'water'});
+ assert.deepEqual(Policy.tags({'building:part':'yes',height:'48',min_height:'12','roof:height':'3',width:'9',surface:'concrete'}),{'building:part':'yes',height:'48',min_height:'12','roof:height':'3'});
+ const raw=Policy.cleanRaw({elements:[{type:'way',id:1,tags:road,geometry:[{lat:30,lon:120}]}]});
+ assert.deepEqual(raw.elements[0].tags,{highway:'primary'});assert.deepEqual(raw.elements[0].geometry,[{lat:30,lon:120}]);
 });
 
 test('bundled and regression data and the generated bootstrap contain no upstream feature labels',()=>{

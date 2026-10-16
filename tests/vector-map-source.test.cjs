@@ -62,10 +62,11 @@ test('cached vector bytes contain only anonymous semantic properties and preserv
  const {VectorTile,PbfReader}=require('../src/vendor/vector-tile-3.0.0-pbf-5.1.2.cjs'),raw=encode({
   building:[{id:321,type:3,properties:{render_height:48,render_min_height:12,hide_3d:false,name:'原建筑名称','name:zh':'原中文名称',official_name:'旧机构名称',brand:'原品牌'},geometry:[building]}],
   poi:[{id:322,type:1,properties:{class:'hospital',name:'原医院名称','name:en':'Original Hospital'},geometry:[[[4050,3250]]]}],
-  place:[{id:323,type:1,properties:{class:'country',name:'原地区名称'},geometry:[[[4050,3250]]]}]
+  place:[{id:323,type:1,properties:{class:'country',name:'原地区名称'},geometry:[[[4050,3250]]]}],
+  transportation:[{id:324,type:2,properties:{class:'primary',surface:'asphalt',width:20,maxheight:4},geometry:[[[4020,3200],[4040,3200]]]}]
  }),before=Buffer.from(raw),clean=anonymizeVectorTile(raw),original=new VectorTile(new PbfReader(raw)),parsed=new VectorTile(new PbfReader(clean));
  assert.deepEqual(raw,before);assert.doesNotMatch(clean.toString('utf8'),/原建筑名称|原中文名称|旧机构名称|原品牌|原医院名称|Original Hospital|原地区名称/);assert.equal(parsed.layers.place,undefined);
- const body=parsed.layers.building.feature(0),prior=original.layers.building.feature(0);assert.equal(body.id,321);assert.deepEqual({...body.properties},{render_height:48,render_min_height:12,hide_3d:false});assert.deepEqual(body.loadGeometry(),prior.loadGeometry());assert.equal(parsed.layers.poi.feature(0).properties.class,'hospital');
+ const body=parsed.layers.building.feature(0),prior=original.layers.building.feature(0);assert.equal(body.id,321);assert.deepEqual({...body.properties},{render_height:48,render_min_height:12,hide_3d:false});assert.deepEqual(body.loadGeometry(),prior.loadGeometry());assert.equal(parsed.layers.poi.feature(0).properties.class,'hospital');assert.deepEqual({...parsed.layers.transportation.feature(0).properties},{class:'primary'});
 });
 
 test('vector base maps omit buildings and facilities while geometry identities survive tile order changes',()=>{

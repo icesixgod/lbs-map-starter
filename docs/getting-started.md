@@ -117,3 +117,7 @@ npm run verify
 默认先尝试 OpenFreeMap，失败时尝试 Overpass。开发自有数据服务时，可以使用 `LBS_MAP_ENDPOINT` 设置首选来源，或使用 `LBS_MAP_ENDPOINTS` 提供以空格、逗号或分号分隔的完整端点列表。默认矢量入口使用 OpenMapTiles 格式，其他端点按 Overpass 接口调用；更换矢量服务还需修改 `scripts/vector-map-source.cjs` 的端点与相应配置。
 
 这些环境变量由 Node.js 进程读取，项目不会自动加载 `.env` 文件。自定义数据源应保留对应署名与许可。
+
+## 公开展示
+
+保留在线取图、关闭设备 GPS 的版本可用 `node scripts/build.cjs --public-demo` 构建。Sites 演示使用此模式；`--demo` 仍是仅含内置街区的静态预览。页面包含隐私与数据说明；部署前请按实际托管、数据源及运营主体更新，并阅读[公开演示核验](public-demo-review.md)。

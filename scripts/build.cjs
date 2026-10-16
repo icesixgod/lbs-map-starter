@@ -10,7 +10,7 @@ const dist = path.join(root, 'dist');
 const read = name => fs.readFileSync(path.join(src, name), 'utf8');
 const script = source => '<script>' + source.replace(/<\/script/gi, '<\\/script') + '</script>';
 
-function build({ staticDemo = false } = {}) {
+function build({ staticDemo = false, publicDemo = false } = {}) {
   if (Number(process.versions.node.split('.')[0]) < 20) {
     throw new Error('LBS Map Starter requires Node.js 20 or newer.');
   }
@@ -47,7 +47,7 @@ function build({ staticDemo = false } = {}) {
     "const LBS_CITY_ASSETS={atlas:'data:image/png;base64," + atlas + "'};",
     ...['lbs-city-art.js', 'coop-district-scene.js', 'map-client.js'].map(read),
   ];
-  const bootstrap = script('globalThis.LBS_MAP_STATIC_DEMO=' + JSON.stringify(staticDemo) + ';\n' + read('lbs-map-bootstrap.js') + '\nLBSMapBoot.start(' + JSON.stringify(map.center) + ');');
+  const bootstrap = script('globalThis.LBS_MAP_STATIC_DEMO=' + JSON.stringify(staticDemo) + ';\nglobalThis.LBS_MAP_PUBLIC_DEMO=' + JSON.stringify(publicDemo) + ';\n' + read('lbs-map-bootstrap.js') + '\nLBSMapBoot.start(' + JSON.stringify(map.center) + ');');
   const legalFiles = [
     'LICENSE', 'THIRD_PARTY_NOTICES.md',
     'src/vendor/THREE-LICENSE.txt',
@@ -69,7 +69,7 @@ function build({ staticDemo = false } = {}) {
 }
 
 if (require.main === module) {
-  try { build({ staticDemo: process.argv.includes('--demo') }); }
+  try { build({ staticDemo: process.argv.includes('--demo'), publicDemo: process.argv.includes('--public-demo') }); }
   catch (error) { console.error(error.message); process.exitCode = 1; }
 }
 

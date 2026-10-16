@@ -11,7 +11,7 @@ const BUILDING_VERSION=1;
 const BASE_ROADS=new Set(['motorway','trunk','primary','secondary','tertiary','minor','unclassified','residential','living_street']);
 const AMENITIES=new Set(['hospital','clinic','doctors','dentist','school','kindergarten','college','university','police','library','bus_station','courthouse','marketplace','arts_centre','theatre','cinema']);
 const VECTOR_LAYERS=['building','landuse','poi','transportation','waterway','water','landcover','park'];
-const VECTOR_PROPERTIES=new Set(['class','subclass','render_height','render_min_height','hide_3d','brunnel','ramp','access','oneway','service','surface','foot','bicycle','layer']);
+const VECTOR_PROPERTIES=new Set(['class','subclass','render_height','render_min_height','hide_3d','brunnel','ramp','access','oneway','service','foot','bicycle','layer']);
 function anonymizeVectorTile(bytes){
  const parsed=new VectorTile(new PbfReader(bytes)),writer=new PbfWriter();
  for(const name of VECTOR_LAYERS){const layer=parsed.layers[name];if(!layer)continue;
@@ -115,7 +115,7 @@ function decodeVectorTiles(tiles,point,meters,{baseOnly=false,buildingsOnly=fals
      if(name==='transportation'&&(!p.class||['rail','transit','aerialway','ferry'].includes(p.class)||baseOnly&&!BASE_ROADS.has(p.class)))continue;
      const highway=p.class==='minor'?'unclassified':p.class==='path'?(p.subclass||'path'):p.class;
      const tags=name==='waterway'?{waterway:p.class||'stream'}:{highway:highway+(p.ramp&&['motorway','trunk','primary','secondary','tertiary'].includes(highway)?'_link':'')};
-     for(const key of ['access','oneway','service','surface','foot','bicycle','layer'])if(p[key]!=null)tags[key]=String(p[key]);
+     for(const key of ['access','oneway','service','foot','bicycle','layer'])if(p[key]!=null)tags[key]=String(p[key]);
      if(p.brunnel==='bridge')tags.bridge='yes';if(p.brunnel==='tunnel')tags.tunnel='yes';
      for(const line of f.loadGeometry()){
       const path=points(f,line);let part=[],lastName='';

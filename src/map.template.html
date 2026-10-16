@@ -2,6 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#272c28">
+<meta name="referrer" content="no-referrer">
 <meta name="description" content="LBS Map Starter：基于 Three.js 与 OpenStreetMap 的开源街区地图，支持 2D/3D 浏览与单栋建筑交互。">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='%23ee964f' d='M16 2 30 16 16 30 2 16z'/%3E%3C/svg%3E">
 <title>LBS Map Starter · 街区地图</title><!-- LBS_BOOTSTRAP --><!-- LBS_STYLES -->
@@ -11,7 +12,7 @@
  <header class="topbar">
   <div class="brand"><strong>LBS Map</strong><span id="project-caption">地图 Starter</span></div>
   <div class="district-brand"><h1 id="district-title">街区地图</h1><span id="building-count">正在载入建筑…</span></div>
-  <div class="map-tools" role="group" aria-label="地图工具"><button id="view-toggle" aria-pressed="false">2D 地图</button><button id="map-tools-toggle" aria-controls="map-tools-menu" aria-expanded="false">工具 <span aria-hidden="true">⌄</span></button><div id="map-tools-menu" class="map-tools-menu"><button id="building-list-toggle" aria-controls="building-browser" aria-expanded="false">建筑列表</button><button id="region-button">探索坐标</button><button id="gps-button"><span>启用 GPS</span></button><a id="project-source" class="source-link" href="https://github.com/icesixgod/lbs-map-starter" target="_blank" rel="noopener" hidden>GitHub ↗</a></div></div>
+  <div class="map-tools" role="group" aria-label="地图工具"><button id="view-toggle" aria-pressed="false">2D 地图</button><button id="map-tools-toggle" aria-controls="map-tools-menu" aria-expanded="false">工具 <span aria-hidden="true">⌄</span></button><div id="map-tools-menu" class="map-tools-menu"><button id="building-list-toggle" aria-controls="building-browser" aria-expanded="false">建筑列表</button><button id="region-button">探索坐标</button><button id="gps-button"><span>启用 GPS</span></button><button id="privacy-button">隐私与数据</button><a id="project-source" class="source-link" href="https://github.com/icesixgod/lbs-map-starter" target="_blank" rel="noopener" hidden>GitHub ↗</a></div></div>
  </header>
  <section class="map-stage" aria-label="街区地图与建筑选择">
   <div id="lbs-scene-root"><div id="district-map">
@@ -47,6 +48,6 @@
  </section>
 </main>
 <div id="toast" class="toast" role="status" hidden></div>
-<div id="sheet" class="sheet" hidden><section class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="sheet-title"><header><h2 id="sheet-title">探索坐标</h2><button id="sheet-close" class="close" aria-label="关闭坐标面板">×</button></header><div id="sheet-body"></div><footer id="sheet-actions"></footer></section></div>
+<div id="sheet" class="sheet" hidden><section class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="sheet-title"><header><h2 id="sheet-title">探索坐标</h2><button id="sheet-close" class="close" aria-label="关闭面板">×</button></header><div id="sheet-body"></div><footer id="sheet-actions"></footer></section></div>
 <!-- LBS_ENGINE -->
 </body></html>

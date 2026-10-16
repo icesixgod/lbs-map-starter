@@ -8,7 +8,7 @@ A **Three.js + OpenStreetMap** starter for location-based games, neighborhood ex
 
 - Pan, pinch to zoom and switch between 2D/3D, with a bundled Shanghai neighborhood.
 - Select connected parts as one building with neutral numbers; bundled data and API responses omit original names.
-- Streamed map loading, coordinate exploration and optional GPS positioning.
+- Streamed map loading and coordinate exploration; GPS is available locally, while public demos do not read device location.
 
 ## Run
 
@@ -33,3 +33,5 @@ npm run verify      # Build, test and check
 [Setup and deployment](docs/getting-started.md) · [Customization](docs/customization.md) · [Architecture](docs/architecture.md) (Chinese)
 
 Code: [MIT](LICENSE). Map data: © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), ODbL. See [third-party notices](THIRD_PARTY_NOTICES.md). Building heights may be estimated; facades are procedural.
+
+Public demos do not request device GPS. Local GPS requires an explicit purpose confirmation and browser permission. See the [public demo review](docs/public-demo-review.md) for data handling and deployment limits.

@@ -7,9 +7,10 @@
     $('region-button').hidden=true;$('gps-button').hidden=true;
     $('map-hint').textContent='拖动浏览 · 滚轮缩放 · 点击建筑查看详情 · 内置街区演示';
   }
+  if(globalThis.LBS_MAP_PUBLIC_DEMO===true)$('gps-button').hidden=true;
   const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   let data=LBS_DISTRICT_DATA,local,mapData=data,mapLocal,selected=null,selectedDistrict=null,districts=null,scene=null,mode='map',position=null,watch=null,gpsError='',twoD=false,filter='all';
-  let toastTimer,returnFocus=null,request=null,requestVersion=0,buildingPage=0,inspectedId=null;
+  let toastTimer,returnFocus=null,request=null,requestVersion=0,buildingPage=0,inspectedId=null,gpsSession=0;
   const compactMap=()=>window.matchMedia('(max-width:680px), (max-height:500px) and (max-width:960px)').matches;
   function focusAvailable(node){(node?.getClientRects().length?node:$('map-tools-toggle')).focus({preventScroll:true});}
   function setBuildingDetails(open){const button=$('building-details-toggle');button.setAttribute('aria-expanded',String(open));button.innerHTML=(open?'收起信息':'更多信息')+' <span aria-hidden="true">⌄</span>';$('building-inspector').dataset.expanded=String(open);}
@@ -445,23 +446,60 @@
     }catch(error){if(initVersion===mapInitSerial)cancelEarlyMapDetails();if(error.name!=='AbortError'){setMapStatus('周边街区加载失败 · 拖动或缩放地图可重试','error');mapRecord(trace,'failed',{errorName:error.name,errorMessage:error.message});}throw error;}
     finally{signal?.removeEventListener('abort',abort);if(mapBuildRequest===controller)mapBuildRequest=null;}
   }
-  function stopGPS(){if(watch!==null){navigator.geolocation?.clearWatch(watch);watch=null;}$('gps-button').querySelector('span').textContent='启用 GPS';}
+  function stopGPS(message='定位已停止。'){
+    gpsSession++;
+    const active=mode==='gps'||watch!==null;
+    if(watch!==null)navigator.geolocation?.clearWatch(watch);
+    watch=null;mode='map';position=null;gpsError=message;mapGPSFollow=false;mapGPSFixCount=0;streamGPSAnchor=null;
+    delete $('lbs-scene-root').dataset.mapGPS;$('gps-button').querySelector('span').textContent='启用 GPS';
+    if(active){stopMapViewport();updatePosition();}
+  }
   function receiveGPSPosition(fix){
-    if(mode!=='gps')return;const value={lat:fix.coords.latitude,lon:fix.coords.longitude,accuracy:fix.coords.accuracy,speed:fix.coords.speed,time:Number.isFinite(fix.timestamp)?fix.timestamp:Date.now()};
+    if(mode!=='gps')return;const value={lat:fix.coords.latitude,lon:fix.coords.longitude,accuracy:fix.coords.accuracy,time:Number.isFinite(fix.timestamp)?fix.timestamp:Date.now()};
     if(!L.validPoint(value)){gpsError='当前定位超出地图支持范围。';position=null;updatePosition();return;}
     if(position&&value.time<position.time)return;
-    position=value;gpsError='';mapGPSFixCount++;$('lbs-scene-root').dataset.mapGPS=JSON.stringify({following:mapGPSFollow,fixes:mapGPSFixCount,time:value.time,lat:value.lat,lon:value.lon});updatePosition();
+    position=value;gpsError='';mapGPSFixCount++;$('lbs-scene-root').dataset.mapGPS=JSON.stringify({following:mapGPSFollow,fixes:mapGPSFixCount});updatePosition();
+  }
+  function privacyBody(){
+    const displayOnly=globalThis.LBS_MAP_STATIC_DEMO===true||globalThis.LBS_MAP_PUBLIC_DEMO===true;
+    return '<div class="privacy-copy"><p>真实地图来自 OpenStreetMap，经 OpenFreeMap / OpenMapTiles 或 Overpass 获取；本站整理为 2D/3D 街区。建筑高度可能为估算值，外观为程序化表现。</p>'+
+      '<p>已去除原始名称、地址及道路材料等非必要属性。地图数据遵循 ODbL，'+
+      '<a href="https://github.com/icesixgod/lbs-map-starter/blob/main/src/assets/README.md" target="_blank" rel="noopener noreferrer">处理说明与数据来源 ↗</a>。</p>'+
+      '<h3>位置与网络请求</h3><p>'+(displayOnly?'公开展示版不读取设备 GPS，也不请求定位权限。':'设备 GPS 默认关闭；启用前需确认用途与周边取图。精确定位仅供当前页面使用，页面不保存定位历史。')+'</p>'+
+      '<p>在线浏览或手动探索坐标，会向运行本页的服务器发送取图区域。服务器再向 OpenFreeMap 或 Overpass 请求地图；上游收到相应区域及服务器的网络信息，不直接收到设备 GPS 原始读数。</p>'+
+      '<p>公开站由 Sites / Cloudflare 托管，请求可能在境外处理；第三方也可能处理请求信息。应用未添加账号、广告分析、定位历史数据库或定位日志。托管与数据源的访问日志、保留期限和处理地域由相应平台控制，当前未核实境内存储保证。</p>'+
+      (displayOnly?'':'<p>本地服务默认缓存地图区域，缓存可能反映曾浏览的范围；可用 <code>npm start -- --no-cache</code> 关闭，退出服务后可删除 <code>.cache/</code>。</p>')+
+      '<h3>使用与控制</h3><p>可只浏览默认街区，无需提交自己的位置。手动坐标仅用于取图，请勿输入个人住址等不希望向服务器发送的坐标。'+(displayOnly?'':'本地 GPS 可随时停止；切到后台或离开页面也会停止，清除页面中的定位记录，并取消尚未完成的自动取图请求。已载入的地图会保留。')+'</p>'+
+      '<p class="muted">代码与来源：<a href="https://github.com/icesixgod/lbs-map-starter" target="_blank" rel="noopener noreferrer">GitHub ↗</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OSM / ODbL ↗</a></p></div>';
+  }
+  function showPrivacy(){
+    returnFocus=document.activeElement;$('sheet-title').textContent='隐私与地图数据';$('sheet-body').innerHTML=privacyBody();$('sheet-actions').innerHTML='<button id="privacy-close">关闭说明</button>';
+    $('sheet').hidden=false;$('lbs-app').inert=true;$('privacy-close').onclick=closeSheet;$('sheet-close').focus();
+  }
+  function enableGPS(){
+    if(globalThis.LBS_MAP_STATIC_DEMO===true||globalThis.LBS_MAP_PUBLIC_DEMO===true||document.hidden)return;
+    mode='gps';mapGPSFollow=true;streamGPSAnchor=null;gpsError='正在等待 GPS 信号…';updatePosition();$('gps-button').querySelector('span').textContent='停止定位';
+    const session=++gpsSession;
+    try{watch=navigator.geolocation.watchPosition(fix=>{if(session===gpsSession&&!document.hidden)receiveGPSPosition(fix);},e=>{if(session!==gpsSession||mode!=='gps')return;position=null;gpsError=e.code===1?'定位权限被拒绝，可手动探索坐标。':e.code===3?'定位超时，等待新的信号或重新启用 GPS。':'暂时无法获取位置，请检查设备定位服务。';updatePosition();toast(gpsError);if(e.code===1)stopGPS(gpsError);},{enableHighAccuracy:true,maximumAge:0,timeout:12000});}
+    catch{stopGPS('暂时无法启用设备定位。');toast(gpsError);}
   }
   async function startGPS(){
-    if(globalThis.LBS_MAP_STATIC_DEMO===true)return;
+    if(globalThis.LBS_MAP_STATIC_DEMO===true||globalThis.LBS_MAP_PUBLIC_DEMO===true)return;
     if(!local)return;
-    if(watch!==null){stopGPS();mode='map';position=null;gpsError='定位已停止。';updatePosition();return;}
+    if(mode==='gps'||watch!==null){stopGPS();return;}
     if(!window.isSecureContext){toast('设备定位需要 HTTPS 或 localhost，也可手动探索坐标。');return;}
     if(!navigator.geolocation){toast('当前浏览器没有提供定位能力，可使用坐标探索。');return;}
-    mode='gps';mapGPSFollow=true;streamGPSAnchor=null;gpsError='正在等待 GPS 信号…';updatePosition();$('gps-button').querySelector('span').textContent='停止定位';
-    watch=navigator.geolocation.watchPosition(receiveGPSPosition,e=>{if(mode!=='gps')return;position=null;gpsError=e.code===1?'定位权限被拒绝，可手动探索坐标。':e.code===3?'定位超时，等待新的信号或重新启用 GPS。':'暂时无法获取位置，请检查设备定位服务。';updatePosition();toast(gpsError);if(e.code===1)stopGPS();},{enableHighAccuracy:true,maximumAge:0,timeout:12000});
+    returnFocus=document.activeElement;$('sheet-title').textContent='启用设备定位';
+    $('sheet-body').innerHTML='<div class="privacy-copy"><p>定位用于显示设备位置并跟随浏览地图，可随时停止；切到后台或离开页面也会停止。</p><p>精确位置只在本页内存中使用，不保存历史。跟随取图会向本机服务发送网格化的周边中心坐标；服务再向 OpenFreeMap / Overpass 请求该区域，第三方可能在境外处理请求。不会逐次上传 GPS 原始读数。</p><label class="consent-option"><input id="gps-device-consent" type="checkbox"><span>同意本页读取设备位置，用于位置显示与地图跟随。</span></label><label class="consent-option"><input id="gps-network-consent" type="checkbox"><span>同意为加载周边地图，将取图区域发送至本机服务及上述第三方，了解可能涉及境外处理。</span></label><button id="gps-read-privacy">查看完整说明</button></div>';
+    $('sheet-actions').innerHTML='<button id="gps-cancel">取消</button><button id="gps-confirm" class="primary" disabled>同意并启用</button>';
+    $('sheet').hidden=false;$('lbs-app').inert=true;
+    const accepted=()=>$('gps-device-consent').checked&&$('gps-network-consent').checked;
+    for(const id of ['gps-device-consent','gps-network-consent'])$(id).onchange=()=>{$('gps-confirm').disabled=!accepted();};
+    $('gps-cancel').onclick=closeSheet;$('gps-read-privacy').onclick=showPrivacy;
+    $('gps-confirm').onclick=()=>{if(!accepted()||$('sheet').hidden)return;closeSheet();enableGPS();};$('gps-device-consent').focus();
   }
   $('gps-button').onclick=startGPS;
+  $('privacy-button').onclick=showPrivacy;
   $('recenter').onclick=()=>{if(!mapLocal)return;mapGPSFollow=true;if(position)updatePosition(mode==='gps'?false:!twoD);else scene?.setView({center:data.center,span:1600});if(twoD){set2DView({center:position||data.center,span:mode==='gps'?currentMapView().span:3400});scheduleMapView();}};
   function queue2DLayout(){if(twoDLayoutFrame)return;twoDLayoutFrame=requestAnimationFrame(()=>{twoDLayoutFrame=0;if(twoD)layout2D();});}
   function zoom(factor){if(!mapLocal||!Number.isFinite(factor)||factor<=0)return;if(!twoD){scene?.zoom(factor);return;}mapInteraction(false);const b=$('map-2d').viewBox.baseVal,size=Math.max(450,Math.min(5200,b.width*factor));if(size===b.width)return;set2DView({center:mapLocal.geo.coordinate(b.x+b.width/2,-b.y-b.height/2),span:size});scheduleMapView();}
@@ -508,7 +546,8 @@
   });
   function showRegion(){
     const center=currentMapView().center;returnFocus=document.activeElement;
-    $('sheet-body').innerHTML='<p>输入 WGS84 坐标，查看周边道路与建筑。</p><form id="coordinate-form" class="coordinate-form"><label>纬度（−85 至 85）<input id="region-lat" type="number" step="any" min="-85" max="85" required value="'+center.lat+'"></label><label>经度（−180 至 180）<input id="region-lon" type="number" step="any" min="-180" max="180" required value="'+center.lon+'"></label><button id="generate-region" type="submit" class="primary">载入周边地图</button></form><p id="region-status" class="form-status" role="status"></p>';
+    $('sheet-title').textContent='探索坐标';
+    $('sheet-body').innerHTML='<p>输入 WGS84 坐标，查看周边道路与建筑。</p><p class="muted">坐标会发送至本站及地图数据源取图，无需填写设备位置。可在工具菜单查看“隐私与数据”。</p><form id="coordinate-form" class="coordinate-form"><label>纬度（−85 至 85）<input id="region-lat" type="number" step="any" min="-85" max="85" required value="'+center.lat+'"></label><label>经度（−180 至 180）<input id="region-lon" type="number" step="any" min="-180" max="180" required value="'+center.lon+'"></label><button id="generate-region" type="submit" class="primary">载入周边地图</button></form><p id="region-status" class="form-status" role="status"></p>';
     $('sheet-actions').innerHTML='<button id="region-home">返回'+esc(homeName)+'</button>';
     $('sheet').hidden=false;$('lbs-app').inert=true;$('region-lat').focus();
     $('region-home').onclick=async()=>{requestVersion++;request?.abort();request=new AbortController();const version=requestVersion;$('region-home').disabled=true;try{await initMap(LBS_DISTRICT_DATA,true,null,request.signal);if(version===requestVersion)closeSheet();}catch(error){if(error.name!=='AbortError')toast(error.message);}finally{if(version===requestVersion)$('region-home').disabled=false;}};
@@ -527,6 +566,7 @@
   }
   $('region-button').onclick=showRegion;
   window.addEventListener('pagehide',()=>{stopGPS();request?.abort();stopMapStream();scene?.deactivate();});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden&&mode==='gps')stopGPS('页面已转到后台，定位已停止。');});
   window.addEventListener('pageshow',event=>{if(event.persisted)location.reload();});
   const ready=initMap(data,true).then(()=>scheduleMapView()).catch(error=>{if(error.name!=='AbortError'){setMapStatus('地图初始化未完成 · '+error.message,'error');toast('地图初始化未完成 · '+error.message);}});
   window.lbsMap={ready,get mode(){return mode;},get position(){return position;},get selected(){return selectedDistrict;},get selectedDistrict(){return selectedDistrict;},get districts(){return districts;},get local(){return mapLocal;},get scene(){return scene;},get mapData(){return mapData;},get mapView(){return currentMapView();},get mapLoading(){return streamLoading||!!mapBuildRequest;},get mapBuildHistory(){return JSON.parse(JSON.stringify(mapBuildHistory));},selectBuilding(id){const region=districts?.byId.get(id);if(region)selectMapDistrict(region);return !!region;},clearSelection:()=>closeBrief(false),snapshot:()=>({mode,selected:selectedDistrict?.id||null,buildings:districts?.regions.length||0,view:currentMapView(),twoD})};
