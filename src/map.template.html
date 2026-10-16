@@ -10,7 +10,7 @@
 <main id="lbs-app">
  <header class="topbar">
   <div class="brand"><strong>LBS Map</strong><span id="project-caption">地图 Starter</span></div>
-  <div class="district-brand"><h1 id="district-title">默认街区</h1><span id="building-count">正在载入建筑…</span></div>
+  <div class="district-brand"><h1 id="district-title">街区地图</h1><span id="building-count">正在载入建筑…</span></div>
   <div class="map-tools" role="group" aria-label="地图工具"><button id="view-toggle" aria-pressed="false">2D 地图</button><button id="map-tools-toggle" aria-controls="map-tools-menu" aria-expanded="false">工具 <span aria-hidden="true">⌄</span></button><div id="map-tools-menu" class="map-tools-menu"><button id="building-list-toggle" aria-controls="building-browser" aria-expanded="false">建筑列表</button><button id="region-button">探索坐标</button><button id="gps-button"><span>启用 GPS</span></button><a id="project-source" class="source-link" href="https://github.com/icesixgod/lbs-map-starter" target="_blank" rel="noopener" hidden>GitHub ↗</a></div></div>
  </header>
  <section class="map-stage" aria-label="街区地图与建筑选择">
@@ -24,7 +24,7 @@
   <div class="map-hint" id="map-hint">拖动浏览 · 滚轮缩放 · 点击建筑查看详情</div>
   <aside id="building-browser" class="map-panel building-browser" aria-label="建筑列表" hidden>
    <div class="panel-heading"><div><small>BUILDINGS</small><h2>建筑列表</h2></div><button id="building-list-close" class="close" aria-label="关闭建筑列表">×</button></div>
-   <label class="search-label" for="building-search">查找建筑</label><input id="building-search" type="search" placeholder="输入建筑名称或类型" autocomplete="off">
+   <label class="search-label" for="building-search">查找建筑</label><input id="building-search" type="search" placeholder="输入建筑编号或类型" autocomplete="off">
    <p id="building-list-status" class="muted" role="status"></p><div id="building-list" class="building-list"></div>
    <div class="list-pagination"><button id="building-prev">上一页</button><span id="building-page"></span><button id="building-next">下一页</button></div>
   </aside>
@@ -34,7 +34,7 @@
    <dl class="building-metrics"><div><dt>建筑高度</dt><dd id="building-height">—</dd></div><div><dt>占地面积</dt><dd id="building-area">—</dd></div></dl>
    <div id="building-details" class="building-details"><p id="building-height-note" class="muted"></p>
    <dl class="building-location"><div><dt>纬度</dt><dd id="building-lat">—</dd></div><div><dt>经度</dt><dd id="building-lon">—</dd></div></dl>
-   <p id="building-street" class="muted" hidden></p><a id="building-source" target="_blank" rel="noopener" hidden>地图来源 ↗</a></div>
+   <a id="building-source" target="_blank" rel="noopener" hidden>地图来源 ↗</a></div>
    <div class="building-actions"><button id="building-details-toggle" aria-controls="building-details" aria-expanded="false">更多信息 <span aria-hidden="true">⌄</span></button><button id="focus-building" class="primary">居中查看</button></div>
   </aside>
   <div class="map-bottom"><div class="zoom-controls" role="group" aria-label="地图缩放"><button id="zoom-in" aria-label="放大地图">+</button><button id="zoom-out" aria-label="缩小地图">−</button></div><button id="recenter" aria-label="地图归位"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 1v4m0 14v4M1 12h4m14 0h4"/></svg><span>地图归位</span></button></div>

@@ -1,11 +1,11 @@
 (function(){
   'use strict';
   const $=id=>document.getElementById(id),L=LBSMapModel;
-  const homeName=LBS_DISTRICT_DATA.center.name||'默认起点';
+  const homeName='默认街区',buildingLabel=L.createBuildingLabels();
   if(globalThis.LBS_MAP_STATIC_DEMO===true){
     $('project-caption').textContent='开源街区地图';$('project-source').hidden=false;
     $('region-button').hidden=true;$('gps-button').hidden=true;
-    $('map-hint').textContent='拖动浏览 · 滚轮缩放 · 点击建筑查看详情 · 上海街区演示';
+    $('map-hint').textContent='拖动浏览 · 滚轮缩放 · 点击建筑查看详情 · 内置街区演示';
   }
   const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   let data=LBS_DISTRICT_DATA,local,mapData=data,mapLocal,selected=null,selectedDistrict=null,districts=null,scene=null,mode='map',position=null,watch=null,gpsError='',twoD=false,filter='all';
@@ -27,7 +27,7 @@
     if(restore&&hadFocus)focusAvailable($('building-list-toggle'));
   }
   $('building-close').onclick=()=>closeBrief();$('building-marker').onclick=openBrief;
-  function buildMarkers(){const marker=$('building-marker');marker.textContent=selectedDistrict?.name||'';marker.setAttribute('aria-label',selectedDistrict?'查看建筑：'+selectedDistrict.name:'查看已选建筑');marker.hidden=!selectedDistrict;scene?.invalidateLabels?.();if(twoD)layout2D();}
+  function buildMarkers(){const marker=$('building-marker');marker.textContent=selectedDistrict?buildingLabel(selectedDistrict):'';marker.setAttribute('aria-label',selectedDistrict?'查看'+buildingLabel(selectedDistrict):'查看已选建筑');marker.hidden=!selectedDistrict;scene?.invalidateLabels?.();if(twoD)layout2D();}
   function mapLabelCandidates(bounds){const r=selectedDistrict;return r&&CoopLocalPlaces.matches(r,filter)&&r.east>=bounds[0]&&r.east<=bounds[2]&&r.north>=bounds[1]&&r.north<=bounds[3]?[r]:[];}
   function layoutProjectedMapLabels(candidates,view){const c=candidates.find(c=>c.id===selectedDistrict?.id),marker=$('building-marker');marker.hidden=!c;if(c){marker.style.left=c.x+'px';marker.style.top=c.y+'px';}}
   function toggleBuildingList(open=$('building-browser').hidden){
@@ -44,10 +44,10 @@
     if(!$('building-browser').hidden)renderBuildingList();
   }
   function renderBuildingList(){
-    const query=$('building-search').value.trim().toLocaleLowerCase(),items=(districts?.regions||[]).filter(r=>CoopLocalPlaces.matches(r,filter)&&(!query||(r.name+' '+(CoopLocalPlaces.types[r.kind]?.label||'')+' '+(r.street||'')).toLocaleLowerCase().includes(query)));
+    const query=$('building-search').value.trim().toLocaleLowerCase(),items=(districts?.regions||[]).filter(r=>CoopLocalPlaces.matches(r,filter)&&(!query||(buildingLabel(r)+' '+(CoopLocalPlaces.types[r.kind]?.label||'')).toLocaleLowerCase().includes(query)));
     const pages=Math.max(1,Math.ceil(items.length/30));buildingPage=Math.max(0,Math.min(pages-1,buildingPage));
-    $('building-list-status').textContent=items.length?'共 '+items.length.toLocaleString()+' 栋 · 点击名称定位建筑':'没有符合条件的建筑';
-    $('building-list').innerHTML=items.slice(buildingPage*30,buildingPage*30+30).map(r=>'<button data-building-id="'+esc(r.id)+'" aria-pressed="'+(r.id===selectedDistrict?.id)+'"><span>'+esc(r.name)+'</span><small>'+esc(CoopLocalPlaces.types[r.kind]?.label||'建筑')+'</small></button>').join('');
+    $('building-list-status').textContent=items.length?'共 '+items.length.toLocaleString()+' 栋 · 点击编号定位建筑':'没有符合条件的建筑';
+    $('building-list').innerHTML=items.slice(buildingPage*30,buildingPage*30+30).map(r=>'<button data-building-id="'+esc(r.id)+'" aria-pressed="'+(r.id===selectedDistrict?.id)+'"><span>'+esc(buildingLabel(r))+'</span><small>'+esc(CoopLocalPlaces.types[r.kind]?.label||'建筑')+'</small></button>').join('');
     $('building-page').textContent=(buildingPage+1)+' / '+pages;$('building-prev').disabled=buildingPage===0;$('building-next').disabled=buildingPage===pages-1;
   }
   $('building-list').onclick=event=>{const button=event.target.closest('button[data-building-id]'),region=districts?.byId.get(button?.dataset.buildingId);if(!region)return;selectMapDistrict(region);focusSelectedBuilding();};
@@ -66,10 +66,10 @@
   function renderBuildingSelection(){
     const r=selectedDistrict;if(!r){$('building-inspector').hidden=true;return;}
     if(inspectedId!==r.id&&!r.memberIds?.includes(inspectedId))setBuildingDetails(false);inspectedId=r.id;
-    selected=r;$('building-name').textContent=r.name;$('building-kind').textContent=CoopLocalPlaces.types[r.kind]?.label||'普通建筑';
+    selected=r;$('building-name').textContent=buildingLabel(r);$('building-kind').textContent=CoopLocalPlaces.types[r.kind]?.label||'普通建筑';
     $('building-height').textContent=Number.isFinite(r.height)?Math.round(r.height*10)/10+' m':'—';$('building-area').textContent=Number.isFinite(r.area)?r.area.toLocaleString()+' m²':'—';
     $('building-height-note').textContent=r.heightSource==='map-height'?'高度来自地图标注':r.heightSource==='map-levels'?'高度按地图标注楼层估算':'高度为地图展示估算值';
-    $('building-lat').textContent=r.lat.toFixed(6);$('building-lon').textContent=r.lon.toFixed(6);$('building-street').textContent=r.street||'';$('building-street').hidden=!r.street;
+    $('building-lat').textContent=r.lat.toFixed(6);$('building-lon').textContent=r.lon.toFixed(6);
     const link=$('building-source');let url=null;try{const parsed=new URL(r.source);if(parsed.protocol==='https:'||parsed.protocol==='http:')url=parsed.href;}catch{}link.hidden=!url;if(url)link.href=url;else link.removeAttribute('href');
     $('building-inspector').hidden=false;updateDistrictPaths();buildMarkers();
     for(const button of $('building-list').querySelectorAll('button'))button.setAttribute('aria-pressed',String(button.dataset.buildingId===r.id));
@@ -146,7 +146,7 @@
     for(const kind of['water','park','road'])for(const f of next.features){if(f.kind===kind&&f.coordinates.length>1){let holes='';if(kind!=='road')for(const ring of f.holes||[])holes+=' '+(yield* path(ring))+'Z';pieces.push('<path class="'+esc(f.kind)+'" fill-rule="evenodd"'+(kind==='road'?' style="stroke-width:'+CoopCityBlocks.roadWidth(f)+'"':'')+' d="'+(yield* path(f.coordinates))+(kind==='road'?'':'Z'+holes)+'"/>');}if(pieces.length>=80)flush();yield 'svg-features';}
     for(const b of nextLocal.sourceBuildings||nextLocal.buildings){if(!b.underground&&!b.incomplete){let holes='';for(const ring of b.holes||[])holes+=(yield* path(ring))+'Z ';pieces.push('<path class="footprint" data-building="'+esc(b.id)+'" fill-rule="evenodd" d="'+(yield* path(b.coordinates))+'Z '+holes.trimEnd()+'"/>');}if(pieces.length>=80)flush();yield 'svg-buildings';}
     pieces.push('<circle id="player-ring-2d" r="80" fill="#54b3ed30" stroke="#6cbcdf" stroke-width="4"/>');
-    for(const region of nextDistricts.regions){let outline='';for(const shape of region.footprints||[{coordinates:region.coordinates,holes:region.holes}]){outline+=(yield* path(shape.coordinates))+'Z ';for(const ring of shape.holes||[])outline+=(yield* path(ring))+'Z ';}pieces.push('<path class="district-region" data-district="'+esc(region.id)+'" data-boundary-source="'+esc(region.boundarySource||'building')+'" role="button" tabindex="0" aria-label="'+esc(region.name)+(region.partCount?'，含 '+region.partCount+' 个楼体部件':'')+'" aria-pressed="false" fill-rule="evenodd" d="'+outline.trimEnd()+'"/>');if(pieces.length>=80)flush();yield 'svg-districts';}flush();yield 'svg-ready';return prepared;
+    for(const region of nextDistricts.regions){let outline='';for(const shape of region.footprints||[{coordinates:region.coordinates,holes:region.holes}]){outline+=(yield* path(shape.coordinates))+'Z ';for(const ring of shape.holes||[])outline+=(yield* path(ring))+'Z ';}pieces.push('<path class="district-region" data-district="'+esc(region.id)+'" data-boundary-source="'+esc(region.boundarySource||'building')+'" role="button" tabindex="0" aria-label="'+esc(buildingLabel(region))+(region.partCount?'，含 '+region.partCount+' 个楼体部件':'')+'" aria-pressed="false" fill-rule="evenodd" d="'+outline.trimEnd()+'"/>');if(pieces.length>=80)flush();yield 'svg-districts';}flush();yield 'svg-ready';return prepared;
   }
   function selectMapDistrict(region,focus=false){
     if(!region)return;if(compactMap())toggleBuildingList(false);selectedDistrict=region;selected=region;scene?.setSelected(region,false);renderBuildingSelection();if(focus)focusSelectedBuilding();
