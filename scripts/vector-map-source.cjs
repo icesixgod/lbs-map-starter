@@ -1,14 +1,40 @@
 'use strict';
 const {createHash}=require('node:crypto');
 const {setImmediate:yieldIO}=require('node:timers/promises');
-const {VectorTile,PbfReader,classifyRings}=require('../src/vendor/vector-tile-3.0.0-pbf-5.1.2.cjs');
+const {VectorTile,PbfReader,PbfWriter,classifyRings}=require('../src/vendor/vector-tile-3.0.0-pbf-5.1.2.cjs');
 const clipping=require('../src/vendor/polygon-clipping-0.15.7.min.js');
 const Generator=require('../src/coop-map-generator.js'),Geography=require('../src/coop-geography.js');
 const {category,inside,center}=require('../src/coop-local-places.js');
+const DataPolicy=require('../src/map-data-policy.js');
 const ENDPOINT='https://tiles.openfreemap.org/planet',UNIT=4096,RAD=Math.PI/180,DAY=86400000,MAX_DOWNLOADS=8;
 const BUILDING_VERSION=1;
 const BASE_ROADS=new Set(['motorway','trunk','primary','secondary','tertiary','minor','unclassified','residential','living_street']);
 const AMENITIES=new Set(['hospital','clinic','doctors','dentist','school','kindergarten','college','university','police','library','bus_station','courthouse','marketplace','arts_centre','theatre','cinema']);
+const VECTOR_LAYERS=['building','landuse','poi','transportation','waterway','water','landcover','park'];
+const VECTOR_PROPERTIES=new Set(['class','subclass','render_height','render_min_height','hide_3d','brunnel','ramp','access','oneway','service','surface','foot','bicycle','layer']);
+function anonymizeVectorTile(bytes){
+ const parsed=new VectorTile(new PbfReader(bytes)),writer=new PbfWriter();
+ for(const name of VECTOR_LAYERS){const layer=parsed.layers[name];if(!layer)continue;
+  writer.writeMessage(3,(_,pbf)=>{
+   pbf.writeStringField(1,name);const keys=[],values=[],keyIds=new Map(),valueIds=new Map();
+   for(let i=0;i<layer.length;i++){
+    const feature=layer.feature(i),tags=[];
+    for(const [key,value]of Object.entries(feature.properties))if(VECTOR_PROPERTIES.has(key)){
+     if(!keyIds.has(key)){keyIds.set(key,keys.length);keys.push(key);}const typed=typeof value+':'+value;
+     if(!valueIds.has(typed)){valueIds.set(typed,values.length);values.push(value);}tags.push(keyIds.get(key),valueIds.get(typed));
+    }
+    // The pinned vector-tile reader records the packed geometry's byte offset.
+    // Copy the commands unchanged so sanitizing never rounds or moves a vertex.
+    if(feature._geometry<0)continue;feature._pbf.pos=feature._geometry;const geometry=feature._pbf.readBytes();
+    pbf.writeMessage(2,(_,out)=>{if(feature.id!=null)out.writeVarintField(1,feature.id);out.writePackedVarint(2,tags);out.writeVarintField(3,feature.type);out.writeBytesField(4,geometry);},null);
+   }
+   for(const key of keys)pbf.writeStringField(3,key);
+   for(const value of values)pbf.writeMessage(4,(v,out)=>{if(typeof v==='number')out.writeDoubleField(3,v);else if(typeof v==='boolean')out.writeBooleanField(7,v);else out.writeStringField(1,String(v));},value);
+   pbf.writeVarintField(5,layer.extent);pbf.writeVarintField(15,2);
+  },null);
+ }
+ return Buffer.from(writer.finish());
+}
 const wrap=x=>((x+180)%360+360)%360-180;
 function world(lon,lat,z){const n=2**z;return[(lon+180)/360*n,(1-Math.asinh(Math.tan(Math.max(-85.051128,Math.min(85.051128,lat))*RAD))/Math.PI)/2*n];}
 function windowBounds(point,meters,z){const dy=meters*1.7/111319.49,dx=dy/Math.cos(point.lat*RAD),a=world(point.lon-dx,point.lat+dy,z),b=world(point.lon+dx,point.lat-dy,z);return[a[0],a[1],b[0],b[1]];}
@@ -145,7 +171,7 @@ function decodeVectorTiles(tiles,point,meters,{baseOnly=false,buildingsOnly=fals
  data.source={...data.source,name:'OpenStreetMap contributors · OpenFreeMap / OpenMapTiles',provider:'openfreemap',attribution:'© OpenStreetMap contributors · © OpenMapTiles · OpenFreeMap',providerUrl:'https://openfreemap.org/',schemaUrl:'https://openmaptiles.org/',dataset:metadata.tiles?.[0]||null};
  data.generation.provider='openfreemap';data.generation.vectorZoom=z;data.generation.buildingVersion=BUILDING_VERSION;
  data.generation.counts={roads:data.features.filter(f=>f.kind==='road').length,buildings:data.features.filter(f=>f.kind==='building').length,places:data.gameNodes.length};
- return data;
+ return DataPolicy.cleanMap(data);
 }
 function createVectorMapSource(options={}){
  const fetchMap=options.fetchMap||globalThis.fetch,endpoint=options.vectorEndpoint||ENDPOINT,cache=new Map(),inflight=new Map(),waiters=[];
@@ -170,7 +196,8 @@ function createVectorMapSource(options={}){
   if(!entry){
    const controller=new AbortController();entry={controller,priority,consumers:0,started:false};inflight.set(url,entry);
    const timer=setTimeout(()=>controller.abort(Object.assign(Error('地图瓦片请求超时'),{name:'TimeoutError'})),options.resourceTimeoutMs??12000);
-   entry.promise=request(url,controller.signal,url===endpoint?1000000:8000000,entry).then(bytes=>{
+   entry.promise=request(url,controller.signal,url===endpoint?1000000:8000000,entry).then(raw=>{
+    const bytes=url===endpoint?raw:anonymizeVectorTile(raw);
     if(url!==endpoint){cache.set(url,bytes);cacheBytes+=bytes.length;while(cacheBytes>32000000&&cache.size){const key=cache.keys().next().value;cacheBytes-=cache.get(key).length;cache.delete(key);}}
     return bytes;
    }).finally(()=>{clearTimeout(timer);if(inflight.get(url)===entry)inflight.delete(url);});
@@ -231,4 +258,4 @@ function createVectorMapSource(options={}){
  }
  return{load,warmCatalog:()=>catalog(),close(){for(const entry of inflight.values())entry.controller.abort();}};
 }
-module.exports={ENDPOINT,BUILDING_VERSION,tilePlan,decodeVectorTiles,createVectorMapSource};
+module.exports={ENDPOINT,BUILDING_VERSION,tilePlan,anonymizeVectorTile,decodeVectorTiles,createVectorMapSource};

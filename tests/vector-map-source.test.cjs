@@ -2,7 +2,7 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {setTimeout:delay}=require('node:timers/promises');
 const {PbfWriter}=require('../src/vendor/vector-tile-3.0.0-pbf-5.1.2.cjs');
-const {tilePlan,decodeVectorTiles,createVectorMapSource}=require('../scripts/vector-map-source.cjs');
+const {tilePlan,anonymizeVectorTile,decodeVectorTiles,createVectorMapSource}=require('../scripts/vector-map-source.cjs');
 const {createMapService}=require('../scripts/district-map-service.cjs');
 const quiet={warn(){},info(){}},z=14,x=13660,y=6745,point={lat:30.26,lon:(x+1)/2**z*360-180};
 const vectorEndpoint='https://tiles.example/planet',metadata={tiles:['https://tiles.example/data/{z}/{x}/{y}.pbf'],maxzoom:14};
@@ -47,15 +47,25 @@ test('tile planning covers Hangzhou and wraps the date line without unbounded po
  const polar=tilePlan({lat:85,lon:0},6000);assert.ok(polar.length<=128);assert.ok(polar[0].z<14);assert.ok(polar.every(t=>t.y>=0&&t.y<2**t.z));
 });
 
-test('adjacent vector tiles join lake holes and footprints and preserve names, height and bridges',()=>{
+test('adjacent vector tiles join lake holes and footprints, remove labels and preserve height and bridges',()=>{
  const data=decodeVectorTiles([left,right],point,1000),water=data.features.filter(f=>f.kind==='water'),buildings=data.features.filter(f=>f.kind==='building'),roads=data.features.filter(f=>f.kind==='road');
  assert.equal(water.length,1);assert.equal(water[0].holes.length,1);assert.deepEqual(water[0].coordinates[0],water[0].coordinates.at(-1));
- assert.equal(buildings.length,1);assert.equal(buildings[0].tags.height,'24');assert.equal(roads.filter(f=>f.name==='测试路').length,2);assert.equal(roads.filter(f=>f.tags.bridge==='yes'&&f.tags.layer==='1').length,2);
+ assert.equal(buildings.length,1);assert.equal(buildings[0].tags.height,'24');assert.equal(roads.filter(f=>!f.tags.bridge).length,2);assert.equal(roads.filter(f=>f.tags.bridge==='yes'&&f.tags.layer==='1').length,2);
  assert.ok(roads.every(f=>f.coordinates.length>=2&&f.coordinates.some(c=>c[0]!==f.coordinates[0][0]||c[1]!==f.coordinates[0][1])));
- const named=roads.filter(f=>f.name==='测试路'),ends=named.map(f=>[f.coordinates[0],f.coordinates.at(-1)].map(c=>c.join(',')));assert.ok(ends[0].some(c=>ends[1].includes(c)),'both road fragments must meet at the same WGS84 seam point');
- assert.equal(data.places.filter(p=>p.coordinates.length).length,1);assert.equal(data.places.find(p=>p.coordinates.length).name,'测试医院');assert.ok(data.gameNodes.some(p=>p.name==='测试医院'));
+ const connected=roads.filter(f=>!f.tags.bridge),ends=connected.map(f=>[f.coordinates[0],f.coordinates.at(-1)].map(c=>c.join(',')));assert.ok(ends[0].some(c=>ends[1].includes(c)),'both road fragments must meet at the same WGS84 seam point');
+ assert.equal(data.places.filter(p=>p.coordinates.length).length,1);assert.ok(data.gameNodes.length);assert.doesNotMatch(JSON.stringify(data),/测试医院|测试路/);
  assert.equal(data.center.lat,point.lat);assert.equal(data.center.lon,Number(point.lon.toFixed(4)));assert.equal(data.source.provider,'openfreemap');assert.match(data.source.attribution,/OpenMapTiles/);
  assert.ok(data.features.every(f=>f.coordinates.every(c=>Math.abs(c[0]-point.lon)<.04&&Math.abs(c[1]-point.lat)<.04)));
+});
+
+test('cached vector bytes contain only anonymous semantic properties and preserve packed geometry and feature IDs',()=>{
+ const {VectorTile,PbfReader}=require('../src/vendor/vector-tile-3.0.0-pbf-5.1.2.cjs'),raw=encode({
+  building:[{id:321,type:3,properties:{render_height:48,render_min_height:12,hide_3d:false,name:'原建筑名称','name:zh':'原中文名称',official_name:'旧机构名称',brand:'原品牌'},geometry:[building]}],
+  poi:[{id:322,type:1,properties:{class:'hospital',name:'原医院名称','name:en':'Original Hospital'},geometry:[[[4050,3250]]]}],
+  place:[{id:323,type:1,properties:{class:'country',name:'原地区名称'},geometry:[[[4050,3250]]]}]
+ }),before=Buffer.from(raw),clean=anonymizeVectorTile(raw),original=new VectorTile(new PbfReader(raw)),parsed=new VectorTile(new PbfReader(clean));
+ assert.deepEqual(raw,before);assert.doesNotMatch(clean.toString('utf8'),/原建筑名称|原中文名称|旧机构名称|原品牌|原医院名称|Original Hospital|原地区名称/);assert.equal(parsed.layers.place,undefined);
+ const body=parsed.layers.building.feature(0),prior=original.layers.building.feature(0);assert.equal(body.id,321);assert.deepEqual({...body.properties},{render_height:48,render_min_height:12,hide_3d:false});assert.deepEqual(body.loadGeometry(),prior.loadGeometry());assert.equal(parsed.layers.poi.feature(0).properties.class,'hospital');
 });
 
 test('vector base maps omit buildings and facilities while geometry identities survive tile order changes',()=>{

@@ -1,5 +1,6 @@
 const fs=require('node:fs'),path=require('node:path');
 const Generator=require('../src/coop-map-generator.js'),Stream=require('../src/lbs-map-stream.js');
+const DataPolicy=require('../src/map-data-policy.js');
 const Water=require('../src/coop-map-water.js'),waterCatalog=require('../src/assets/district-water-surfaces.json');
 const {createMapUpstream}=require('./map-upstream.cjs');
 const {BUILDING_VERSION}=require('./vector-map-source.cjs');
@@ -19,10 +20,10 @@ function createMapService(options={}){
  function read(key){
   if(cache.has(key)){const entry=cache.get(key);remember(key,entry);return entry;}
   if(!cacheDir)return null;
-  try{const file=path.join(cacheDir,key+'.json');if(fs.statSync(file).size>16000000)return null;let entry=JSON.parse(fs.readFileSync(file,'utf8'));if(entry.data?.generation?.version!==Generator.VERSION||Generator.cacheKey(entry.data.center,entry.data.radiusMeters)!==key||!Number.isFinite(entry.savedAt))return null;entry=repairWater(entry);remember(key,entry);return entry;}catch{return null;}
+  try{const file=path.join(cacheDir,key+'.json');if(fs.statSync(file).size>16000000)return null;let entry=JSON.parse(fs.readFileSync(file,'utf8'));if(entry.data?.generation?.version!==Generator.VERSION||Generator.cacheKey(entry.data.center,entry.data.radiusMeters)!==key||!Number.isFinite(entry.savedAt))return null;entry=repairWater(entry);entry={...entry,data:DataPolicy.cleanMap(entry.data)};write(key,entry);return entry;}catch{return null;}
  }
  function write(key,entry){
-  remember(key,entry);if(!cacheDir)return;
+  entry={savedAt:entry.savedAt,data:DataPolicy.cleanMap(entry.data)};remember(key,entry);if(!cacheDir)return;
   try{fs.mkdirSync(cacheDir,{recursive:true});const file=path.join(cacheDir,key+'.json'),temporary=file+'.next';fs.writeFileSync(temporary,JSON.stringify(entry));fs.renameSync(temporary,file);
    const files=fs.readdirSync(cacheDir).filter(n=>/^v\d+_-?\d+\.\d+_-?\d+\.\d+(?:_r\d+)?\.json$/.test(n)).map(n=>({n,time:fs.statSync(path.join(cacheDir,n)).mtimeMs})).sort((a,b)=>b.time-a.time);for(const f of files.slice(maxEntries))fs.unlinkSync(path.join(cacheDir,f.n));
   }catch(e){console.warn('Map cache could not be saved:',e.message);}
@@ -37,7 +38,7 @@ function createMapService(options={}){
   for(const c of fits){const entry=read(c.key);if(!entry||Stream.distance(entry.data.center,point)+meters*1.45+40>entry.data.extentMeters)continue;if(now()-entry.savedAt<WEEK)return{entry,key:c.key};stale??={entry,key:c.key};}
   return stale;
  }
- function deliver(entry,kind,point=null,meters=null){const data=point?Stream.subset(entry.data,point,meters):entry.data;return{...data,delivery:{cache:kind,stale:!fresh(entry)}};}
+ function deliver(entry,kind,point=null,meters=null){const data=DataPolicy.cleanMap(point?Stream.subset(entry.data,point,meters):entry.data);return{...data,delivery:{cache:kind,stale:!fresh(entry)}};}
  function abortError(){return Object.assign(Error('地图请求已取消'),{name:'AbortError',status:499});}
  function drain(){
   clearTimeout(queueTimer);queueTimer=null;if(closed||active||!queue.length)return;
@@ -50,10 +51,10 @@ function createMapService(options={}){
     // Another queued job may already have filled this window.
     const exact=read(job.key),cover=covering(job.point,job.meters)?.entry,hit=exact&&fresh(exact)?exact:cover;
     if(hit&&fresh(hit)){job.resolve(deliver(hit,'coverage',job.point,job.meters));return;}
-    contactedUpstream=true;const data=await upstream.load(job.point,job.fetchRadius,{baseOnly:!!options.baseOnly,signal:controller.signal});controller.signal.throwIfAborted();const entry={savedAt:now(),data};
+    contactedUpstream=true;const data=DataPolicy.cleanMap(await upstream.load(job.point,job.fetchRadius,{baseOnly:!!options.baseOnly,signal:controller.signal}));controller.signal.throwIfAborted();const entry={savedAt:now(),data};
     if(options.baseOnly){data.features=data.features.filter(f=>f.kind!=='building');data.places=[];data.gameNodes=[];data.generation.baseOnly=true;data.generation.counts.buildings=0;data.generation.counts.places=0;}
     write(Generator.cacheKey(job.point,job.fetchRadius),entry);const result=job.fetchRadius===job.meters||options.baseOnly?data:Stream.subset(data,job.point,job.meters);if(job.fetchRadius!==job.meters&&!options.baseOnly)write(job.key,{savedAt:entry.savedAt,data:result});
-    job.resolve({...result,delivery:{cache:'miss',stale:false}});
+    job.resolve({...DataPolicy.cleanMap(result),delivery:{cache:'miss',stale:false}});
    }catch(e){
     if(closed){job.reject(abortError());return;}
     const fallback=read(job.key)||covering(job.point,job.meters)?.entry;
@@ -88,7 +89,7 @@ function createMapService(options={}){
   const controller=new AbortController(),abort=()=>controller.abort(signal.reason);signal?.addEventListener('abort',abort,{once:true});controllers.add(controller);streaming++;
   const timer=setTimeout(()=>controller.abort(Object.assign(Error('地图数据请求总时间已超时'),{code:'MAP_REQUEST_TIMEOUT'})),options.timeoutMs??40000);
   try{
-   const data=await upstream.load(point,meters,{signal:controller.signal,onData:part=>{controller.signal.throwIfAborted();onData?.(part);}});controller.signal.throwIfAborted();
+   const data=DataPolicy.cleanMap(await upstream.load(point,meters,{signal:controller.signal,onData:part=>{controller.signal.throwIfAborted();onData?.(DataPolicy.cleanMap(part));}}));controller.signal.throwIfAborted();
    write(key,{savedAt:now(),data});return{...data,delivery:{...data.delivery,cache:'miss',stale:false,partial:false}};
   }catch(error){
    if(controller.signal.aborted)throw controller.signal.reason;

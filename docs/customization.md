@@ -7,6 +7,7 @@
 | 标题、按钮、详情字段 | `src/map.template.html` |
 | 布局、配色与适配 | `src/map.css` |
 | 建筑类型主题 | `src/map-model.js` |
+| 数据字段与去名策略 | `src/map-data-policy.js` |
 | 程序化外墙和窗户 | `src/lbs-city-art.js` |
 | 建筑高度和类型判定 | `src/coop-local-places.js` |
 | 三维几何、相机和点选 | `src/coop-district-scene.js` |
@@ -42,7 +43,7 @@ console.log(app.selected);    // 当前选择，未选中时为 null
 const building = app.districts.regions[0];
 if (building) {
   app.selectBuilding(building.id);
-  console.log(app.selected.name, app.selected.height, app.selected.area);
+  console.log(app.selected.id, app.selected.height, app.selected.area);
 }
 
 app.clearSelection();
@@ -57,6 +58,8 @@ app.clearSelection();
 ## 数据源与部署
 
 本地服务器通过 `/api/map` 提供普通 JSON 和 `stream=1` 时的 NDJSON，浏览器按同源路径请求。在线地图依赖服务层；将 `dist/index.html` 单独放到静态托管只能提供内置区域，需要同时接入兼容的地图 API 才能在线探索。
+
+取数、缓存和构建均执行字段白名单；接口不提供原建筑名、机构名、别名或地址。自定义数据源应保留几何、类型、高度和来源字段，并遵守相同的去名策略。
 
 `npm run build:demo` 会关闭在线取数并隐藏坐标探索和 GPS，适合静态展示；仓库包含 GitHub Pages 自动部署工作流。在线版本需另行配置 Node.js 服务入口与 HTTPS。保留页面的数据署名及 `THIRD_PARTY_NOTICES.md`。
 

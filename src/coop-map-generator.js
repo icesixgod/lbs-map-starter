@@ -2,6 +2,7 @@
 const Geography=require('./coop-geography.js');
 const Water=require('./coop-map-water.js');
 const {category,center,inside}=require('./coop-local-places.js');
+const DataPolicy=require('./map-data-policy.js');
 const VERSION=1;
 function location(input={}){
  const lat=typeof input.lat==='number'?input.lat:Number(String(input.lat??'').trim()),lon=typeof input.lon==='number'?input.lon:Number(String(input.lon??'').trim());
@@ -88,6 +89,6 @@ function normalize(raw,input){
  const places=data.places.map(place=>({place,rank:rank[category(place.tags)]??8,distance:geo.distance(place.lon,place.lat)})).filter(entry=>entry.distance<=geo.radius).sort((a,b)=>a.rank-b.rank||a.distance-b.distance||a.place.id.localeCompare(b.place.id));
  data.gameNodes=places.slice(0,32).map(({place})=>({id:'place-'+place.id.replace(/[^a-z0-9]/gi,'-'),placeId:place.id,name:place.name||undefined,lon:place.lon,lat:place.lat,address:[place.tags['addr:street'],place.tags['addr:housenumber']].filter(Boolean).join(' ')}));
  data.generation.counts={roads:data.features.filter(f=>f.kind==='road').length,buildings:data.features.filter(f=>f.kind==='building').length,places:data.gameNodes.length};
- return data;
+ return DataPolicy.cleanMap(data);
 }
 module.exports={VERSION,WATER_VERSION:Water.VERSION,location,radius,cacheKey,query,normalize};

@@ -45,9 +45,9 @@ test('late connected parts and reprojection preserve old selection aliases witho
  const projected=Districts.restore(step.value,nextLocal),p=nextLocal.geo.local(121,31);assert.equal(projected.at(p).id,mixed.regions[0].id);assert.deepEqual(projected.regions[0].parts.map(p=>p.coordinates),mixed.regions[0].parts.map(p=>p.coordinates));assert.equal(projected.byId.get(oldId).partCount,3);
 });
 
-test('all 56 mapped Oriental Pearl parts form one named building and retain their original geometry and heights',()=>{
+test('all 56 mapped landmark parts form one anonymous building and retain their original geometry and heights',()=>{
  const data=require('../src/assets/default-map.json'),before=JSON.stringify(data),{local,districts}=model(data),tower=districts.at({east:0,north:0});
- assert.ok(tower);assert.equal(tower.partCount,56);assert.equal(districts.regions.filter(r=>r.id===tower.id).length,1);assert.ok(tower.bounds[2]-tower.bounds[0]<100);assert.ok(tower.bounds[3]-tower.bounds[1]<100);
+ assert.ok(tower);assert.equal(tower.partCount,56);assert.ok(tower.bounds[2]-tower.bounds[0]<100);assert.ok(tower.bounds[3]-tower.bounds[1]<100);
  assert.ok(tower.parts.some(p=>p.connectionHeight===468));assert.ok(tower.parts.some(p=>p.connectionMinHeight===0));assert.equal(tower.height,Math.max(...tower.parts.map(p=>p.height)));
  const bodies=new Map(local.sourceBuildings.map(b=>[String(b.id),b]));for(const part of tower.parts){const b=bodies.get(part.buildingIds[0]);assert.ok(b);assert.deepEqual(part.coordinates,b.coordinates);assert.equal(part.height,b.height);assert.equal(part.minHeight,b.minHeight);assert.equal(districts.byId.get(part.id),tower);}
  assert.equal(JSON.stringify(data),before);

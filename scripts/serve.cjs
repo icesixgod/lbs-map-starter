@@ -6,6 +6,7 @@ const path = require('node:path');
 const zlib = require('node:zlib');
 const { createMapService } = require('./district-map-service.cjs');
 const { createMapUpstream } = require('./map-upstream.cjs');
+const DataPolicy = require('../src/map-data-policy.js');
 
 const outputDir = path.resolve(__dirname, '../dist');
 
@@ -75,7 +76,7 @@ function createMapServer(options = {}) {
             });
             res.flushHeaders();
           }
-          res.write(JSON.stringify(data) + '\n');
+          res.write(JSON.stringify(DataPolicy.cleanMap(data)) + '\n');
         };
         try {
           const result = await map.stream(input, { signal: controller.signal, onData: send });
@@ -108,7 +109,7 @@ function createMapServer(options = {}) {
             },
           } : await baseMap.load(input);
         } else result = await map.load(input);
-        json(200, result);
+        json(200, DataPolicy.cleanMap(result));
       } catch (error) {
         json(error.status || 503, { error: error.message });
       }

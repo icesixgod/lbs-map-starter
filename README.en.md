@@ -7,7 +7,7 @@ A **Three.js + OpenStreetMap** starter for location-based games, neighborhood ex
 [![Shanghai 3D map and building interaction preview](docs/images/map-preview.jpg)](https://lbs-map-starter.aileetcode.com)
 
 - Pan, pinch to zoom and switch between 2D/3D, with a bundled Shanghai neighborhood.
-- Select connected parts as one building; use neutral building numbers to search, highlight and inspect details.
+- Select connected parts as one building with neutral numbers; bundled data and API responses omit original names.
 - Streamed map loading, coordinate exploration and optional GPS positioning.
 
 ## Run

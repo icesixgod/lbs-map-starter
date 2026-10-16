@@ -35,7 +35,7 @@ function build({ staticDemo = false } = {}) {
   }
   const workerHandler = workModule.split(begin)[1].split(end)[0];
   const workerSource = [...workerModules.map(read), workerHandler, 'workerMain(globalThis);'].join('\n');
-  const map = JSON.parse(read('assets/default-map.json'));
+  const map = require('../src/map-data-policy.js').cleanMap(JSON.parse(read('assets/default-map.json')));
   if (map.center?.crs !== 'WGS84' || !Array.isArray(map.features) || !Array.isArray(map.places)) {
     throw new Error('src/assets/default-map.json must contain a WGS84 district map.');
   }

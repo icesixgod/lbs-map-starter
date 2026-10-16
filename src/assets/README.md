@@ -2,11 +2,13 @@
 
 | File | Purpose | Source / license |
 | --- | --- | --- |
-| `default-map.json` | Starting map around Shanghai's Oriental Pearl Tower | OpenStreetMap contributors, served through OpenFreeMap / OpenMapTiles; ODbL |
+| `default-map.json` | Anonymous starting neighborhood geometry | OpenStreetMap contributors, served through OpenFreeMap / OpenMapTiles; ODbL |
 | `district-water-surfaces.json` | Supplementary OSM river geometry used when a source window lacks a complete water surface | OpenStreetMap relation 8227206; ODbL |
 | `city-material-atlas-v1.png` | Example material atlas for stylized walls, roofs and ground | Project sample asset distributed under the root MIT license; not OSM map data or real-world facade photography |
 
 Map files retain their `source` metadata, including source links, attribution and retrieval information where available. They are distributed as sample data, not as runtime download caches.
+
+Original feature names, translated names, aliases, descriptive POI fields and addresses are removed. Geometry, IDs, heights, semantic types and source attribution are retained.
 
 The regression map is kept separately in `tests/fixtures/binjiang-map.json`. The runtime build only embeds `default-map.json` and the material atlas; it does not embed the regression map.
 
